@@ -1,0 +1,14 @@
+/* 
+    static/ — Publicly served assets (CSS, JS, images).
+
+    Flask serves everything in this folder at the URL /static/...
+    For example, static/style.css is available at /static/style.css.
+
+    In HTML templates, use:
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+    url_for() is preferred over hard-coding because it works even
+    if you later mount the app under a URL prefix (e.g., /myapp/static/).
+
+    This file is a placeholder so Git tracks the empty directory.
+*/

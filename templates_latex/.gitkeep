@@ -1,0 +1,16 @@
+<!-- 
+    templates_latex/ — Jinja2 templates that render to LaTeX (.tex), NOT HTML.
+
+    WHY A SEPARATE FOLDER?
+    Flask auto-discovers templates in templates/ and treats them as HTML.
+    Our LaTeX templates use the same Jinja2 syntax ({{ }}, {% %}) but
+    produce .tex files, not HTML.  Keeping them in a different folder:
+      1. Prevents Flask from accidentally serving them as web pages.
+      2. Makes it clear to developers which templates produce HTML
+         vs. which produce LaTeX.
+      3. Lets us use a standalone Jinja2 Environment with custom
+         delimiters (LaTeX uses { } heavily, so we may switch Jinja2
+         to use (( )) or similar to avoid clashes).
+
+    This file is a placeholder so Git tracks the empty directory.
+-->

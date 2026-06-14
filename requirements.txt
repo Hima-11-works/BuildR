@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────────────────
+# requirements.txt — Python dependencies for the Resume Generator
+# ──────────────────────────────────────────────────────────────
+# Install everything at once with:  pip install -r requirements.txt
+#
+# Why each package?
+#   flask          – Lightweight web framework; handles routes, requests, responses.
+#   pydantic       – Data-validation & settings management via Python type hints.
+#                    We'll use it to define Resume / Experience / Education models.
+#   python-dotenv  – Reads .env files so secrets (API keys) stay out of code.
+#   google-genai   – Official Google Generative AI SDK for calling the Gemini API.
+#   jinja2         – Templating engine (Flask bundles it, but we also use it
+#                    stand-alone to render LaTeX templates).
+#   requests       – HTTP client for fetching external resources (job postings, etc.).
+#   beautifulsoup4 – HTML parser for scraping / cleaning fetched web pages.
+# ──────────────────────────────────────────────────────────────
+
+flask
+pydantic
+python-dotenv
+google-genai
+jinja2
+requests
+beautifulsoup4
