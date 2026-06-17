@@ -3,15 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume Generator</title>
-    <!--
-        Flask serves static files from the static/ directory.
-        url_for('static', filename='...') builds the correct URL
-        so you never hard-code paths.  We'll add a stylesheet later.
-    -->
+    <title>BuildR — Profile Editor</title>
+    <meta name="description" content="Edit your master resume profile. Add education, experience, projects, skills, and certifications.">
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Our stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Resume Generator</h1>
-    <p>Your Flask app is running! 🚀</p>
+
+<div class="app-container">
+
+    <!-- ── Header ──────────────────────────────────────────── -->
+    <header class="app-header">
+        <h1>BuildR</h1>
+        <p>Your master resume profile — edit everything in one place.</p>
+    </header>
+
+    <!-- ── Error Summary Banner ────────────────────────────── -->
+    <div id="error-summary" class="error-summary">
+        <h3>⚠ Validation Errors</h3>
+        <ul id="error-list"></ul>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         PERSONAL INFO
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-personal-info">
+        <div class="section-header">
+            <h2><span class="section-icon">👤</span> Personal Info</h2>
+        </div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="pi-name">Full Name</label>
+                <input type="text" id="pi-name" placeholder="e.g. Jane Doe">
+                <span class="field-error"></span>
+            </div>
+            <div class="form-group">
+                <label for="pi-email">Email</label>
+                <input type="email" id="pi-email" placeholder="e.g. jane@example.com">
+                <span class="field-error"></span>
+            </div>
+            <div class="form-group">
+                <label for="pi-phone">Phone (optional)</label>
+                <input type="text" id="pi-phone" placeholder="e.g. +1 555-123-4567">
+                <span class="field-error"></span>
+            </div>
+        </div>
+
+        <!-- Links (dynamic key-value pairs) -->
+        <div style="margin-top: var(--space-lg);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm);">
+                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;">
+                    Links
+                </label>
+                <button type="button" id="add-link-btn" class="btn-add">+ Add Link</button>
+            </div>
+            <div id="links-list"></div>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EDUCATION
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-education">
+        <div class="section-header">
+            <h2><span class="section-icon">🎓</span> Education</h2>
+            <button type="button" id="add-education-btn" class="btn-add">+ Add Education</button>
+        </div>
+        <div id="education-list" class="list-container">
+            <!-- Education items are added dynamically by app.js -->
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EXPERIENCE
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-experience">
+        <div class="section-header">
+            <h2><span class="section-icon">💼</span> Experience</h2>
+            <button type="button" id="add-experience-btn" class="btn-add">+ Add Experience</button>
+        </div>
+        <div id="experience-list" class="list-container">
+            <!-- Experience items are added dynamically by app.js -->
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         PROJECTS
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-projects">
+        <div class="section-header">
+            <h2><span class="section-icon">🚀</span> Projects</h2>
+            <button type="button" id="add-project-btn" class="btn-add">+ Add Project</button>
+        </div>
+        <div id="project-list" class="list-container">
+            <!-- Project items are added dynamically by app.js -->
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SKILLS
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-skills">
+        <div class="section-header">
+            <h2><span class="section-icon">🛠</span> Skills</h2>
+            <button type="button" id="add-skill-category-btn" class="btn-add">+ Add Category</button>
+        </div>
+        <div id="skills-list">
+            <!-- Skill categories are added dynamically by app.js -->
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         CERTIFICATIONS
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card" id="section-certifications">
+        <div class="section-header">
+            <h2><span class="section-icon">📜</span> Certifications</h2>
+            <button type="button" id="add-certification-btn" class="btn-add">+ Add Certification</button>
+        </div>
+        <div id="certification-list" class="list-container">
+            <!-- Certification items are added dynamically by app.js -->
+        </div>
+    </section>
+
+</div><!-- /.app-container -->
+
+<!-- ── Fixed Save Bar ──────────────────────────────────────── -->
+<div class="save-bar">
+    <button type="button" id="save-btn" class="btn-primary">
+        <span id="save-btn-text">Save Profile</span>
+    </button>
+</div>
+
+<!-- ── Toast Notification Container ────────────────────────── -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Our JavaScript — loaded last so the DOM is ready -->
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+
 </body>
 </html>
