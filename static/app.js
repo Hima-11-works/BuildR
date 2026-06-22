@@ -40,7 +40,7 @@
 // a JS object and the form.  The form IS the data.
 // ──────────────────────────────────────────────────────────────
 
-"use strict";
+"use strict"; //strict mode of js is activated
 
 // ── DOM references ──────────────────────────────────────────
 const saveBtn         = document.getElementById("save-btn");
@@ -55,6 +55,13 @@ const experienceList    = document.getElementById("experience-list");
 const projectList       = document.getElementById("project-list");
 const certificationList = document.getElementById("certification-list");
 const skillsList        = document.getElementById("skills-list");
+
+// ── Icons Helper ────────────────────────────────────────────
+function refreshIcons() {
+    if (typeof lucide !== "undefined") {
+        lucide.createIcons();
+    }
+}
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -75,6 +82,7 @@ async function loadProfile() {
         }
 
         populateForm(profile);
+        refreshIcons();
     } catch (err) {
         showToast(`Failed to load profile: ${err.message}`, "error");
     }
@@ -158,12 +166,13 @@ function addLinkRow(label, url) {
     row.innerHTML = `
         <input type="text" placeholder="Label (e.g. GitHub)" class="link-label" value="${escapeAttr(label || "")}">
         <input type="text" placeholder="https://..." class="link-url" value="${escapeAttr(url || "")}">
-        <button type="button" class="btn-remove" title="Remove link">✕</button>
+        <button type="button" class="btn-remove" title="Remove link"><i data-lucide="x"></i></button>
     `;
     row.querySelector(".btn-remove").addEventListener("click", () => {
         row.remove();
     });
     container.appendChild(row);
+    refreshIcons();
 }
 
 
@@ -176,7 +185,7 @@ function addEducationItem(data) {
     item.innerHTML = `
         <div class="list-item-header">
             <span class="list-item-number"></span>
-            <button type="button" class="btn-remove">✕ Remove</button>
+            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
         </div>
         <div class="form-grid">
             <div class="form-group">
@@ -213,6 +222,7 @@ function addEducationItem(data) {
 
     educationList.appendChild(item);
     renumberItems(educationList, "Education");
+    refreshIcons();
 }
 
 
@@ -225,7 +235,7 @@ function addExperienceItem(data) {
     item.innerHTML = `
         <div class="list-item-header">
             <span class="list-item-number"></span>
-            <button type="button" class="btn-remove">✕ Remove</button>
+            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
         </div>
         <div class="form-grid">
             <div class="form-group">
@@ -262,6 +272,7 @@ function addExperienceItem(data) {
 
     experienceList.appendChild(item);
     renumberItems(experienceList, "Experience");
+    refreshIcons();
 }
 
 
@@ -274,7 +285,7 @@ function addProjectItem(data) {
     item.innerHTML = `
         <div class="list-item-header">
             <span class="list-item-number"></span>
-            <button type="button" class="btn-remove">✕ Remove</button>
+            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
         </div>
         <div class="form-grid">
             <div class="form-group">
@@ -307,6 +318,7 @@ function addProjectItem(data) {
 
     projectList.appendChild(item);
     renumberItems(projectList, "Project");
+    refreshIcons();
 }
 
 
@@ -319,7 +331,7 @@ function addCertificationItem(data) {
     item.innerHTML = `
         <div class="list-item-header">
             <span class="list-item-number"></span>
-            <button type="button" class="btn-remove">✕ Remove</button>
+            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
         </div>
         <div class="form-grid">
             <div class="form-group">
@@ -344,6 +356,7 @@ function addCertificationItem(data) {
 
     certificationList.appendChild(item);
     renumberItems(certificationList, "Certification");
+    refreshIcons();
 }
 
 
@@ -356,7 +369,7 @@ function addSkillCategory(catName, skills) {
     cat.innerHTML = `
         <div class="skill-category-header">
             <input type="text" class="skill-cat-name" placeholder="Category name (e.g. Languages)" value="${escapeAttr(catName || "")}">
-            <button type="button" class="btn-remove" title="Remove category">✕</button>
+            <button type="button" class="btn-remove" title="Remove category"><i data-lucide="x"></i></button>
         </div>
         <div class="skill-tags"></div>
         <div class="skill-add-input" style="margin-top: var(--space-sm);">
@@ -381,12 +394,13 @@ function addSkillCategory(catName, skills) {
         tag.className = "skill-tag";
         tag.innerHTML = `
             <span class="skill-tag-text">${escapeHtml(skillName.trim())}</span>
-            <button type="button" class="skill-tag-remove" title="Remove">×</button>
+            <button type="button" class="skill-tag-remove" title="Remove"><i data-lucide="x"></i></button>
         `;
         tag.querySelector(".skill-tag-remove").addEventListener("click", () => {
             tag.remove();
         });
         tagsContainer.appendChild(tag);
+        refreshIcons();
     }
 
     addBtn.addEventListener("click", () => {
@@ -407,6 +421,7 @@ function addSkillCategory(catName, skills) {
     (skills || []).forEach(s => addSkillTag(s));
 
     skillsList.appendChild(cat);
+    refreshIcons();
 }
 
 
@@ -701,10 +716,11 @@ function showToast(message, type = "success") {
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
     toast.innerHTML = `
-        <span>${type === "success" ? "✓" : "⚠"}</span>
+        <i data-lucide="${type === 'success' ? 'check-circle' : 'alert-circle'}" class="toast-icon"></i>
         <span>${escapeHtml(message)}</span>
     `;
     toastContainer.appendChild(toast);
+    refreshIcons();
 
     // Auto-dismiss after 4 seconds
     setTimeout(() => {
@@ -749,6 +765,20 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Load profile on page load ────────────────────────────
     loadProfile();
 
+    // ── Initial Icon Rendering ──────────────────────────────
+    refreshIcons();
+
+    // ── Theme Toggle Event Wiring ────────────────────────────
+    const themeToggle = document.getElementById("theme-toggle");
+    if (themeToggle) {
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme");
+            const newTheme = currentTheme === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", newTheme);
+            localStorage.setItem("theme", newTheme);
+        });
+    }
+
     // ── Save button ──────────────────────────────────────────
     saveBtn.addEventListener("click", saveProfile);
 
@@ -767,4 +797,10 @@ document.addEventListener("DOMContentLoaded", () => {
             saveProfile();
         }
     });
+
+    // ── Remove transitions blocker ───────────────────────────
+    // Allow the browser to paint the initial styled page before enabling theme transitions
+    setTimeout(() => {
+        document.body.classList.remove("no-transition");
+    }, 100);
 });

@@ -4,41 +4,6 @@
 
 /* ── CSS Custom Properties (Design Tokens) ─────────────────── */
 :root {
-    /* Background layers */
-    --bg-base: #0b0b10;
-    --bg-surface: #13131d;
-    --bg-card: rgba(22, 22, 38, 0.75);
-    --bg-input: rgba(30, 30, 52, 0.6);
-    --bg-input-focus: rgba(38, 38, 64, 0.8);
-
-    /* Accent gradient */
-    --accent-start: #7c5cfc;
-    --accent-mid: #5e8bff;
-    --accent-end: #38bdf8;
-    --accent-glow: rgba(124, 92, 252, 0.25);
-    --accent-solid: #7c5cfc;
-
-    /* Text */
-    --text-primary: #eaeaf5;
-    --text-secondary: #9494b8;
-    --text-muted: #5e5e7e;
-    --text-on-accent: #ffffff;
-
-    /* Borders */
-    --border-subtle: rgba(148, 148, 184, 0.12);
-    --border-accent: rgba(124, 92, 252, 0.4);
-
-    /* Status */
-    --success: #34d399;
-    --success-bg: rgba(52, 211, 153, 0.1);
-    --error: #f87171;
-    --error-bg: rgba(248, 113, 113, 0.1);
-    --warning: #fbbf24;
-
-    /* Danger / remove */
-    --danger: #ef4444;
-    --danger-hover: #dc2626;
-
     /* Spacing */
     --space-xs: 0.25rem;
     --space-sm: 0.5rem;
@@ -57,11 +22,68 @@
     --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
     --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
     --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-    /* Shadows */
-    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
-    --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.4);
-    --shadow-glow: 0 0 20px var(--accent-glow);
+/* ── Light Mode (Cream & Black) ────────────────────────────── */
+[data-theme="light"] {
+    --bg-base: #F5F1EA;              /* Warm off-white/cream */
+    --bg-surface: #EDE8DD;           /* Slightly darker cream */
+    --bg-card: #EDE8DD;              /* Slightly darker cream for cards */
+    --bg-input: #F5F1EA;             /* Base cream for inputs */
+    --bg-input-focus: #FFFFFF;       /* Clean white for focus */
+
+    --text-primary: #111111;         /* Near black */
+    --text-secondary: #555555;       /* Dark gray */
+    --text-muted: #888888;           /* Muted text */
+    --text-on-accent: #F5F1EA;       /* Cream text on black button */
+
+    --accent-solid: #111111;         /* Charcoal/Black primary */
+    --border-subtle: rgba(17, 17, 17, 0.15); /* Subtle dark border */
+    --border-accent: rgba(17, 17, 17, 0.4);  /* Accent hover border */
+    --border-strong: #111111;
+
+    --success: #1B4D3E;              /* Deep forest green */
+    --success-bg: rgba(27, 77, 62, 0.08);
+    --error: #A30000;                /* Elegant deep red */
+    --error-bg: rgba(163, 0, 0, 0.08);
+    --warning: #B35C00;              /* Deep warm orange */
+    --danger: #A30000;
+    --danger-hover: #D10000;
+
+    --shadow-card: 0 4px 20px rgba(17, 17, 17, 0.04);
+    --shadow-elevated: 0 8px 30px rgba(17, 17, 17, 0.08);
+    --shadow-glow: 0 0 15px rgba(17, 17, 17, 0.05);
+}
+
+/* ── Dark Mode (Black & Cream) ────────────────────────────── */
+[data-theme="dark"] {
+    --bg-base: #121214;              /* Near-black or deep charcoal */
+    --bg-surface: #1E1E22;           /* Dark surfaces */
+    --bg-card: #1E1E22;
+    --bg-input: #121214;
+    --bg-input-focus: #25252A;
+
+    --text-primary: #F5F1EA;         /* Cream/Off-white */
+    --text-secondary: #A0A0A0;       /* Light gray */
+    --text-muted: #666666;
+    --text-on-accent: #121214;       /* Dark text on cream button */
+
+    --accent-solid: #F5F1EA;         /* Cream primary */
+    --border-subtle: rgba(245, 241, 234, 0.15); /* Subtle cream border */
+    --border-accent: rgba(245, 241, 234, 0.4);  /* Accent border */
+    --border-strong: #F5F1EA;
+
+    --success: #52B788;              /* Soft green */
+    --success-bg: rgba(82, 183, 136, 0.12);
+    --error: #FF4D6D;                /* Soft red */
+    --error-bg: rgba(255, 77, 109, 0.12);
+    --warning: #F59E0B;              /* Soft gold */
+    --danger: #FF4D6D;
+    --danger-hover: #FF708D;
+
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
+    --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.7);
+    --shadow-glow: 0 0 20px rgba(245, 241, 234, 0.05);
 }
 
 
@@ -86,16 +108,29 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle grid pattern on body */
-body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-        radial-gradient(circle at 20% 20%, rgba(124, 92, 252, 0.04) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.04) 0%, transparent 50%);
-    pointer-events: none;
-    z-index: 0;
+/* Base Headings Styling */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Sora', sans-serif;
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+/* Smooth transitions exception for page load */
+body:not(.no-transition), 
+body:not(.no-transition) .section-card,
+body:not(.no-transition) input,
+body:not(.no-transition) textarea,
+body:not(.no-transition) button,
+body:not(.no-transition) header,
+body:not(.no-transition) hr,
+body:not(.no-transition) .list-item,
+body:not(.no-transition) .skill-tag,
+body:not(.no-transition) .save-bar,
+body:not(.no-transition) .theme-toggle {
+    transition: background-color var(--transition-slow) ease, 
+                color var(--transition-slow) ease, 
+                border-color var(--transition-slow) ease, 
+                box-shadow var(--transition-slow) ease;
 }
 
 
@@ -110,6 +145,50 @@ body::before {
 }
 
 
+/* ── Theme Toggle Button ──────────────────────────────────── */
+.theme-toggle {
+    position: absolute;
+    top: var(--space-xl);
+    right: var(--space-lg);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-primary);
+    outline: none;
+    z-index: 10;
+    padding: 0;
+}
+
+.theme-toggle:hover {
+    border-color: var(--border-strong);
+    background-color: var(--bg-surface);
+    transform: scale(1.05);
+}
+
+.theme-toggle:active {
+    transform: scale(0.95);
+}
+
+.theme-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* Toggle icon display based on data-theme */
+[data-theme="light"] .sun-icon {
+    display: none;
+}
+[data-theme="dark"] .moon-icon {
+    display: none;
+}
+
+
 /* ── Header ────────────────────────────────────────────────── */
 .app-header {
     text-align: center;
@@ -117,13 +196,10 @@ body::before {
 }
 
 .app-header h1 {
-    font-size: 2.25rem;
+    font-size: 2.5rem;
     font-weight: 800;
     letter-spacing: -0.03em;
-    background: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
     margin-bottom: var(--space-xs);
 }
 
@@ -140,10 +216,7 @@ body::before {
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
     margin-bottom: var(--space-lg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     box-shadow: var(--shadow-card);
-    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .section-card:hover {
@@ -169,7 +242,51 @@ body::before {
 }
 
 .section-icon {
-    font-size: 1.3rem;
+    width: 20px;
+    height: 20px;
+    stroke-width: 2.2px;
+    color: var(--text-primary);
+    display: inline-block;
+    vertical-align: -3px;
+}
+
+.error-summary-icon {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.5px;
+    color: var(--error);
+    display: inline-block;
+    vertical-align: -3px;
+    margin-right: var(--space-xs);
+}
+
+.toast-icon {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.5px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Lucide icons inside buttons */
+.btn-remove i, .btn-add i {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.2px;
+    display: inline-block;
+    vertical-align: -2px;
+}
+
+.btn-remove i {
+    margin-right: 4px;
+}
+
+.skill-tag-remove i {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2.5px;
+    display: inline-block;
+    vertical-align: -1px;
 }
 
 
@@ -259,7 +376,7 @@ body::before {
 }
 
 .list-item {
-    background: rgba(15, 15, 25, 0.5);
+    background: var(--bg-base);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     padding: var(--space-lg);
@@ -280,7 +397,7 @@ body::before {
 }
 
 .list-item:hover {
-    border-color: rgba(148, 148, 184, 0.2);
+    border-color: var(--border-accent);
 }
 
 .list-item-header {
@@ -291,9 +408,10 @@ body::before {
 }
 
 .list-item-number {
+    font-family: 'Sora', sans-serif;
     font-size: 0.75rem;
     font-weight: 700;
-    color: var(--accent-solid);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -301,28 +419,35 @@ body::before {
 
 /* ── Buttons ───────────────────────────────────────────────── */
 
-/* Primary gradient button */
+/* Primary minimalist button */
 .btn-primary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: var(--space-sm);
-    background: linear-gradient(135deg, var(--accent-start), var(--accent-mid));
+    background: var(--accent-solid);
     color: var(--text-on-accent);
-    border: none;
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
     padding: 0.7rem 1.5rem;
-    font-family: inherit;
+    font-family: 'Sora', sans-serif;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
-    transition: all var(--transition-fast);
-    box-shadow: 0 2px 12px var(--accent-glow);
+    box-shadow: var(--shadow-card);
+    transition: background-color var(--transition-fast) ease,
+                color var(--transition-fast) ease,
+                border-color var(--transition-fast) ease,
+                transform var(--transition-fast) ease,
+                box-shadow var(--transition-fast) ease;
 }
 
 .btn-primary:hover {
+    background: transparent;
+    color: var(--text-primary);
+    border-color: var(--border-strong);
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px var(--accent-glow), var(--shadow-glow);
+    box-shadow: var(--shadow-elevated);
 }
 
 .btn-primary:active {
@@ -341,11 +466,11 @@ body::before {
     align-items: center;
     gap: var(--space-xs);
     background: transparent;
-    color: var(--accent-solid);
+    color: var(--text-primary);
     border: 1px dashed var(--border-accent);
     border-radius: var(--radius-sm);
     padding: 0.5rem 1rem;
-    font-family: inherit;
+    font-family: 'Sora', sans-serif;
     font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
@@ -353,8 +478,9 @@ body::before {
 }
 
 .btn-add:hover {
-    background: rgba(124, 92, 252, 0.08);
-    border-color: var(--accent-solid);
+    background: var(--bg-surface);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
 }
 
 /* Danger / remove button */
@@ -376,7 +502,7 @@ body::before {
 
 .btn-remove:hover {
     color: var(--danger);
-    background: rgba(239, 68, 68, 0.08);
+    background: var(--error-bg);
     border-color: rgba(239, 68, 68, 0.3);
 }
 
@@ -404,14 +530,13 @@ body::before {
 
 .kv-row input:focus {
     background: var(--bg-input-focus);
-    border-color: var(--accent-solid);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    border-color: var(--border-strong);
 }
 
 
 /* ── Skills Section ────────────────────────────────────────── */
 .skill-category {
-    background: rgba(15, 15, 25, 0.5);
+    background: var(--bg-base);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     padding: var(--space-lg);
@@ -442,8 +567,7 @@ body::before {
 
 .skill-category-header input:focus {
     background: var(--bg-input-focus);
-    border-color: var(--accent-solid);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    border-color: var(--border-strong);
 }
 
 .skill-tags {
@@ -457,8 +581,8 @@ body::before {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    background: rgba(124, 92, 252, 0.1);
-    border: 1px solid rgba(124, 92, 252, 0.25);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-full);
     padding: 0.3rem 0.7rem;
     font-size: 0.82rem;
@@ -501,15 +625,14 @@ body::before {
 }
 
 .skill-add-input input:focus {
-    border-color: var(--accent-solid);
-    box-shadow: 0 0 0 2px var(--accent-glow);
+    border-color: var(--border-strong);
     width: 160px;
 }
 
 .skill-add-input button {
     background: transparent;
     border: 1px solid var(--border-accent);
-    color: var(--accent-solid);
+    color: var(--text-primary);
     border-radius: var(--radius-full);
     width: 26px;
     height: 26px;
@@ -522,7 +645,8 @@ body::before {
 }
 
 .skill-add-input button:hover {
-    background: rgba(124, 92, 252, 0.15);
+    background: var(--bg-surface);
+    border-color: var(--border-strong);
 }
 
 
@@ -533,15 +657,14 @@ body::before {
     left: 0;
     right: 0;
     z-index: 100;
-    background: rgba(11, 11, 16, 0.85);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: var(--bg-base);
     border-top: 1px solid var(--border-subtle);
     padding: var(--space-md) var(--space-lg);
     display: flex;
     justify-content: center;
     gap: var(--space-md);
     align-items: center;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .save-bar .btn-primary {
