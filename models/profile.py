@@ -170,6 +170,10 @@ class Experience(BaseModel):
         ...,
         description="End date or 'Present'.",
     )
+    work_mode: Optional[str] = Field(
+        default=None,
+        description="Work mode: 'Onsite', 'Remote', or 'Hybrid'. Optional.",
+    )
     bullets: list[str] = Field(
         default_factory=list,
         description=(
@@ -180,6 +184,13 @@ class Experience(BaseModel):
     technologies: list[str] = Field(
         default_factory=list,
         description="Technologies / tools used in this role.",
+    )
+    highlight_keywords: str = Field(
+        default="",
+        description=(
+            "Comma-separated keywords/phrases to bold in bullet points "
+            "when rendering the PDF."
+        ),
     )
 
 
@@ -213,6 +224,13 @@ class Project(BaseModel):
     link: Optional[str] = Field(
         default=None,
         description="URL to repo, live demo, or write-up.",
+    )
+    highlight_keywords: str = Field(
+        default="",
+        description=(
+            "Comma-separated keywords/phrases to bold in bullet points "
+            "when rendering the PDF."
+        ),
     )
 
 
@@ -265,6 +283,26 @@ class Certification(BaseModel):
     )
 
 
+# ─── Achievement ─────────────────────────────────────────────
+# A single notable achievement or accomplishment.
+# ──────────────────────────────────────────────────────────────
+
+class Achievement(BaseModel):
+    """A single achievement entry."""
+
+    title: str = Field(
+        ..., min_length=1,
+        description="Achievement description.",
+    )
+    highlight_keywords: str = Field(
+        default="",
+        description=(
+            "Comma-separated keywords/phrases to bold in the achievement "
+            "when rendering the PDF."
+        ),
+    )
+
+
 # ─── Profile (top-level document) ────────────────────────────
 # This is the *root* model — it contains everything.
 #
@@ -311,4 +349,8 @@ class Profile(BaseModel):
     certifications: list[Certification] = Field(
         default_factory=list,
         description="Professional certifications and credentials.",
+    )
+    achievements: list[Achievement] = Field(
+        default_factory=list,
+        description="Notable achievements and accomplishments.",
     )

@@ -57,6 +57,7 @@ const experienceList    = document.getElementById("experience-list");
 const projectList       = document.getElementById("project-list");
 const certificationList = document.getElementById("certification-list");
 const skillsList        = document.getElementById("skills-list");
+const achievementList   = document.getElementById("achievement-list");
 
 // ── Icons Helper ────────────────────────────────────────────
 function refreshIcons() {
@@ -135,6 +136,10 @@ function populateForm(profile) {
     // ── Certifications ───────────────────────────────────────
     certificationList.innerHTML = "";
     (profile.certifications || []).forEach(cert => addCertificationItem(cert));
+
+    // ── Achievements ─────────────────────────────────────────
+    achievementList.innerHTML = "";
+    (profile.achievements || []).forEach(ach => addAchievementItem(ach));
 }
 
 
@@ -234,6 +239,15 @@ function addExperienceItem(data) {
     const item = document.createElement("div");
     item.className = "list-item experience-item";
 
+    // Build work mode dropdown options
+    const workModeVal = data?.work_mode || "";
+    const workModeOptions = ["", "Onsite", "Remote", "Hybrid"];
+    const workModeOptionsHtml = workModeOptions.map(opt => {
+        const selected = opt === workModeVal ? "selected" : "";
+        const label = opt || "— Select —";
+        return `<option value="${escapeAttr(opt)}" ${selected}>${escapeHtml(label)}</option>`;
+    }).join("");
+
     item.innerHTML = `
         <div class="list-item-header">
             <span class="list-item-number"></span>
@@ -256,6 +270,10 @@ function addExperienceItem(data) {
                 <label>End Date</label>
                 <input type="text" class="exp-end-date" placeholder="e.g. Present" value="${escapeAttr(data?.end_date || "")}">
             </div>
+            <div class="form-group">
+                <label>Work Mode</label>
+                <select class="exp-work-mode">${workModeOptionsHtml}</select>
+            </div>
             <div class="form-group full-width">
                 <label>Bullet Points (one per line)</label>
                 <textarea class="exp-bullets" rows="4" placeholder="e.g.&#10;Built a microservice that reduced latency by 40%&#10;Led a team of 3 engineers on the search feature">${escapeHtml((data?.bullets || []).join("\n"))}</textarea>
@@ -263,6 +281,10 @@ function addExperienceItem(data) {
             <div class="form-group full-width">
                 <label>Technologies (comma-separated)</label>
                 <input type="text" class="exp-technologies" placeholder="e.g. Python, Flask, PostgreSQL, Docker" value="${escapeAttr((data?.technologies || []).join(", "))}">
+            </div>
+            <div class="form-group full-width">
+                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
+                <input type="text" class="exp-highlight-keywords" placeholder="e.g. 300+ CP, Codeforces, 40% latency reduction" value="${escapeAttr(data?.highlight_keywords || "")}">
             </div>
         </div>
     `;
@@ -309,6 +331,10 @@ function addProjectItem(data) {
             <div class="form-group full-width">
                 <label>Technologies (comma-separated)</label>
                 <input type="text" class="proj-technologies" placeholder="e.g. React, Node.js, MongoDB" value="${escapeAttr((data?.technologies || []).join(", "))}">
+            </div>
+            <div class="form-group full-width">
+                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
+                <input type="text" class="proj-highlight-keywords" placeholder="e.g. WebSockets, 95% test coverage" value="${escapeAttr(data?.highlight_keywords || "")}">
             </div>
         </div>
     `;
@@ -358,6 +384,40 @@ function addCertificationItem(data) {
 
     certificationList.appendChild(item);
     renumberItems(certificationList, "Certification");
+    refreshIcons();
+}
+
+
+// ── Achievements ─────────────────────────────────────────────
+
+function addAchievementItem(data) {
+    const item = document.createElement("div");
+    item.className = "list-item achievement-item";
+
+    item.innerHTML = `
+        <div class="list-item-header">
+            <span class="list-item-number"></span>
+            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
+        </div>
+        <div class="form-grid">
+            <div class="form-group full-width">
+                <label>Achievement</label>
+                <input type="text" class="ach-title" placeholder="e.g. Won first place in ACM ICPC Regional 2024" value="${escapeAttr(data?.title || '')}">
+            </div>
+            <div class="form-group full-width">
+                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
+                <input type="text" class="ach-highlight-keywords" placeholder="e.g. first place, ACM ICPC" value="${escapeAttr(data?.highlight_keywords || '')}">
+            </div>
+        </div>
+    `;
+
+    item.querySelector(".btn-remove").addEventListener("click", () => {
+        item.remove();
+        renumberItems(achievementList, "Achievement");
+    });
+
+    achievementList.appendChild(item);
+    renumberItems(achievementList, "Achievement");
     refreshIcons();
 }
 
@@ -488,13 +548,18 @@ function collectFormData() {
         const bulletsTxt = item.querySelector(".exp-bullets").value;
         const techTxt    = item.querySelector(".exp-technologies").value.trim();
 
+        const workMode = item.querySelector(".exp-work-mode").value || null;
+        const highlightKw = item.querySelector(".exp-highlight-keywords").value;
+
         profile.experience.push({
-            company:      item.querySelector(".exp-company").value,
-            role:         item.querySelector(".exp-role").value,
-            start_date:   item.querySelector(".exp-start-date").value,
-            end_date:     item.querySelector(".exp-end-date").value,
-            bullets:      bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
-            technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
+            company:            item.querySelector(".exp-company").value,
+            role:               item.querySelector(".exp-role").value,
+            start_date:         item.querySelector(".exp-start-date").value,
+            end_date:           item.querySelector(".exp-end-date").value,
+            work_mode:          workMode,
+            bullets:            bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
+            technologies:       techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
+            highlight_keywords: highlightKw,
         });
     });
 
@@ -505,12 +570,15 @@ function collectFormData() {
         const techTxt    = item.querySelector(".proj-technologies").value.trim();
         const linkVal    = item.querySelector(".proj-link").value.trim();
 
+        const projHighlightKw = item.querySelector(".proj-highlight-keywords").value;
+
         profile.projects.push({
-            name:         item.querySelector(".proj-name").value,
-            description:  item.querySelector(".proj-description").value,
-            bullets:      bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
-            technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
-            link:         linkVal || null,
+            name:               item.querySelector(".proj-name").value,
+            description:        item.querySelector(".proj-description").value,
+            bullets:            bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
+            technologies:       techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
+            link:               linkVal || null,
+            highlight_keywords: projHighlightKw,
         });
     });
 
@@ -534,6 +602,15 @@ function collectFormData() {
             name:   item.querySelector(".cert-name").value,
             issuer: item.querySelector(".cert-issuer").value,
             date:   item.querySelector(".cert-date").value,
+        });
+    });
+
+    // ── Achievements ─────────────────────────────────────────
+    profile.achievements = [];
+    achievementList.querySelectorAll(".achievement-item").forEach(item => {
+        profile.achievements.push({
+            title:              item.querySelector(".ach-title").value,
+            highlight_keywords: item.querySelector(".ach-highlight-keywords").value,
         });
     });
 
@@ -862,6 +939,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("add-experience-btn").addEventListener("click", () => addExperienceItem());
     document.getElementById("add-project-btn").addEventListener("click", () => addProjectItem());
     document.getElementById("add-certification-btn").addEventListener("click", () => addCertificationItem());
+    document.getElementById("add-achievement-btn").addEventListener("click", () => addAchievementItem());
     document.getElementById("add-skill-category-btn").addEventListener("click", () => addSkillCategory());
 
     // ── Keyboard shortcut: Ctrl+S to save ────────────────────

@@ -199,7 +199,71 @@ def _create_latex_env() -> jinja2.Environment:
 
 
 # ══════════════════════════════════════════════════════════════
-# 3. RENDER THE FINAL .tex STRING
+# 3. KEYWORD HIGHLIGHTING
+# ══════════════════════════════════════════════════════════════
+
+def _apply_highlights(text: str, keywords_csv: str) -> str:
+    """
+    Bold specific keywords/phrases in an already-escaped LaTeX string.
+
+    Parameters
+    ----------
+    text : str
+        An already LaTeX-escaped string (e.g. a bullet point).
+    keywords_csv : str
+        Comma-separated list of keywords to highlight.
+        Each keyword is escaped with escape_latex() before matching
+        so that the replacement aligns with the escaped text.
+
+    Returns
+    -------
+    str
+        The text with matching phrases wrapped in \\textbf{…}.
+    """
+    if not keywords_csv or not keywords_csv.strip():
+        return text
+    for raw_kw in keywords_csv.split(","):
+        raw_kw = raw_kw.strip()
+        if not raw_kw:
+            continue
+        # Escape the keyword the same way the text was escaped
+        escaped_kw = escape_latex(raw_kw)
+        if escaped_kw in text:
+            text = text.replace(escaped_kw, r"\textbf{" + escaped_kw + "}")
+    return text
+
+
+def _highlight_entries(escaped_data: dict) -> dict:
+    """
+    Walk through experience, projects, and achievements in the
+    already-escaped profile data and apply keyword highlighting
+    to bullet points and achievement titles.
+
+    This must be called AFTER _escape_recursive() so that both
+    the text and the keywords have been through the same escaping.
+    The \\textbf{} commands we inject are raw LaTeX — they will
+    NOT be escaped because we add them after the escaping pass.
+    """
+    # Experience bullets
+    for exp in escaped_data.get("experience", []):
+        kw_csv = exp.get("highlight_keywords", "")
+        exp["bullets"] = [_apply_highlights(b, kw_csv) for b in exp.get("bullets", [])]
+
+    # Project bullets
+    for proj in escaped_data.get("projects", []):
+        kw_csv = proj.get("highlight_keywords", "")
+        proj["bullets"] = [_apply_highlights(b, kw_csv) for b in proj.get("bullets", [])]
+
+    # Achievement titles
+    for ach in escaped_data.get("achievements", []):
+        kw_csv = ach.get("highlight_keywords", "")
+        ach["title"] = _apply_highlights(ach.get("title", ""), kw_csv)
+
+    return escaped_data
+
+
+# ══════════════════════════════════════════════════════════════
+# 4. RENDER THE FINAL .tex STRING
 # ══════════════════════════════════════════════════════════════
 
 def render_latex(profile: Profile) -> str:
@@ -210,8 +274,9 @@ def render_latex(profile: Profile) -> str:
     --------
     1. Convert the Profile to a plain dict via .model_dump().
     2. Deep-escape every string in that dict (escape_latex on all leaves).
-    3. Load the resume.tex Jinja2 template.
-    4. Render with the escaped data → final .tex source.
+    3. Apply keyword highlighting (bold matching phrases).
+    4. Load the resume.tex Jinja2 template.
+    5. Render with the escaped data → final .tex source.
 
     Parameters
     ----------
@@ -232,9 +297,15 @@ def render_latex(profile: Profile) -> str:
     # already-safe "AT\&T" instead of the dangerous "AT&T".
     escaped_data = _escape_recursive(data)
 
-    # ── Step 3–4: Load template and render ────────────────────
+    # ── Step 3: Apply keyword highlighting ────────────────────
+    # This wraps user-specified keywords in \textbf{} AFTER
+    # escaping, so the LaTeX commands are not themselves escaped.
+    escaped_data = _highlight_entries(escaped_data)
+
+    # ── Step 4–5: Load template and render ────────────────────
     env = _create_latex_env()
     template = env.get_template("resume.tex")
     tex_string = template.render(**escaped_data)
 
     return tex_string
+
