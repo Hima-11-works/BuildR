@@ -29,12 +29,15 @@
 # ──────────────────────────────────────────────────────────────
 
 import os
+from pathlib import Path as _Path
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from pydantic import ValidationError
 
 from models.profile import Profile
 from services.storage_service import load_profile, save_profile
+from services.latex_service import render_latex
+from services.pdf_service import compile_pdf, PdfCompilationError
 
 # ── Step 1: Load environment variables from .env ─────────────
 # load_dotenv() reads the .env file in the project root and
@@ -173,6 +176,94 @@ def api_put_profile():
             })
 
         return jsonify({"errors": errors}), 422
+
+
+# ── Resume Generation API ────────────────────────────────────
+# This route orchestrates the entire document pipeline:
+#   1. Load the saved profile from disk
+#   2. Render it into a LaTeX .tex string (with escaping)
+#   3. Compile the .tex to PDF via Tectonic
+#   4. Return the PDF as a downloadable file
+#
+# WHY POST AND NOT GET?
+# Generating a PDF is an expensive, side-effect-producing
+# operation (it writes files to disk and spawns a subprocess).
+# POST is the correct HTTP verb for "perform an action",
+# while GET is for "retrieve existing data".
+# ──────────────────────────────────────────────────────────────
+
+# Where generated resumes live on disk
+_RESUMES_DIR = _Path(__file__).resolve().parent / "storage" / "resumes"
+
+
+@app.route("/api/resume/master", methods=["POST"])
+def api_generate_master_resume():
+    """
+    Generate the master resume as a PDF and return it for download.
+
+    PIPELINE
+    --------
+    1. load_profile()     → Profile object (from storage/profile.json)
+    2. render_latex()     → .tex string (escaped + templated)
+    3. compile_pdf()      → .pdf file (via Tectonic subprocess)
+    4. send_file()        → HTTP response with PDF as attachment
+
+    ERROR HANDLING
+    --------------
+    • Empty profile (no name)  → 400 with a helpful message.
+    • Tectonic not installed    → 500 with install instructions.
+    • LaTeX compilation error   → 500 with the Tectonic log.
+    • Any other exception       → 500 with the error message.
+    """
+    try:
+        # ── Step 1: Load the profile ──────────────────────────
+        profile = load_profile()
+
+        # ── Guard: don't generate a resume with no name ───────
+        if not profile.personal_info.name.strip():
+            return jsonify({
+                "error": "Your profile has no name. "
+                         "Please fill in at least your name before generating."
+            }), 400
+
+        # ── Step 2: Render LaTeX ──────────────────────────────
+        tex_string = render_latex(profile)
+
+        # ── Step 3: Compile to PDF ────────────────────────────
+        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
+
+        # ── Step 4: Return the PDF ────────────────────────────
+        # send_file() streams the file to the browser.
+        # as_attachment=True sets Content-Disposition: attachment,
+        # which triggers a download instead of inline display.
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="master_resume.pdf",
+        )
+
+    except PdfCompilationError as e:
+        # Tectonic-specific errors (not installed, compile failure)
+        print(f"\n{'='*60}")
+        print(f"PDF COMPILATION ERROR: {e}")
+        if e.log:
+            print(f"Tectonic log:\n{e.log}")
+        print(f"{'='*60}\n")
+        return jsonify({
+            "error": str(e),
+            "log": e.log,
+        }), 500
+
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"RESUME GENERATION ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        return jsonify({
+            "error": f"Failed to generate resume: {str(e)}"
+        }), 500
 
 
 # ── Step 4: Run the dev server ───────────────────────────────

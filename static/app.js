@@ -45,6 +45,8 @@
 // ── DOM references ──────────────────────────────────────────
 const saveBtn         = document.getElementById("save-btn");
 const saveBtnText     = document.getElementById("save-btn-text");
+const generateBtn     = document.getElementById("generate-btn");
+const generateBtnText = document.getElementById("generate-btn-text");
 const errorSummary    = document.getElementById("error-summary");
 const errorList       = document.getElementById("error-list");
 const toastContainer  = document.getElementById("toast-container");
@@ -593,6 +595,77 @@ async function saveProfile() {
 
 
 // ═══════════════════════════════════════════════════════════════
+// 4b. GENERATE MASTER RESUME — POST to /api/resume/master
+// ═══════════════════════════════════════════════════════════════
+//
+// HOW PDF DOWNLOAD WORKS IN THE BROWSER
+// ─────────────────────────────────────
+// Unlike JSON responses, a PDF is a binary blob.  We can't just
+// call response.json().  Instead:
+//
+//   1. We call response.blob() to read the binary body.
+//   2. Create a temporary object URL with URL.createObjectURL().
+//   3. Create a hidden <a> element pointing to that URL.
+//   4. Programmatically "click" it to trigger the download.
+//   5. Clean up the object URL to free memory.
+//
+// The content-type check (response.headers.get('content-type'))
+// tells us whether the server returned a PDF (success) or JSON
+// (error).  On error, we parse the JSON to get the error message.
+// ═══════════════════════════════════════════════════════════════
+
+async function generateResume() {
+    // ── Show loading state ───────────────────────────────────
+    generateBtn.disabled = true;
+    generateBtnText.textContent = "Generating…";
+
+    try {
+        const response = await fetch("/api/resume/master", {
+            method: "POST",
+        });
+
+        // ── Check if we got a PDF back ───────────────────────
+        const contentType = response.headers.get("content-type") || "";
+
+        if (response.ok && contentType.includes("application/pdf")) {
+            // ── Success: download the PDF blob ───────────────
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            // Create a temporary link and click it
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "master_resume.pdf";
+            document.body.appendChild(link);
+            link.click();
+
+            // Clean up
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showToast("Resume generated and downloaded!", "success");
+        } else {
+            // ── Error: parse the JSON error message ──────────
+            const result = await response.json();
+            const errorMsg = result.error || "Failed to generate resume.";
+            showToast(errorMsg, "error");
+
+            // If there's a compilation log, log it for debugging
+            if (result.log) {
+                console.error("Tectonic compilation log:\n", result.log);
+            }
+        }
+    } catch (err) {
+        showToast(`Network error: ${err.message}`, "error");
+    } finally {
+        generateBtn.disabled = false;
+        generateBtnText.textContent = "Generate Master Resume";
+        refreshIcons();
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
 // 5. VALIDATION ERROR DISPLAY
 // ═══════════════════════════════════════════════════════════════
 //
@@ -781,6 +854,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ── Save button ──────────────────────────────────────────
     saveBtn.addEventListener("click", saveProfile);
+    generateBtn.addEventListener("click", generateResume);
 
     // ── "Add" buttons ────────────────────────────────────────
     document.getElementById("add-link-btn").addEventListener("click", () => addLinkRow());
