@@ -48,6 +48,7 @@ import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.2.2';
 
 // Store TipTap editor instances
 const editorInstances = new Map();
+let achievementsEditorId = null;
 
 // Helper to create and initialize TipTap rich editors
 function createRichEditor(parentElement, initialHtml, placeholder, showList = false) {
@@ -228,7 +229,7 @@ const experienceList    = document.getElementById("experience-list");
 const projectList       = document.getElementById("project-list");
 const certificationList = document.getElementById("certification-list");
 const skillsList        = document.getElementById("skills-list");
-const achievementList   = document.getElementById("achievement-list");
+
 
 // ── Icons Helper ────────────────────────────────────────────
 function refreshIcons() {
@@ -309,8 +310,25 @@ function populateForm(profile) {
     (profile.certifications || []).forEach(cert => addCertificationItem(cert));
 
     // ── Achievements ─────────────────────────────────────────
-    achievementList.innerHTML = "";
-    (profile.achievements || []).forEach(ach => addAchievementItem(ach));
+    const achievementsContainer = document.getElementById("achievements-editor-container");
+    if (achievementsContainer) {
+        achievementsContainer.innerHTML = "";
+        const achievements = profile.achievements || "";
+        let initialHtml = "";
+        if (typeof achievements === "string") {
+            initialHtml = achievements;
+        } else if (Array.isArray(achievements)) {
+            if (achievements.length > 0) {
+                initialHtml = `<ul>${achievements.map(ach => `<li>${ach?.title || ach}</li>`).join("")}</ul>`;
+            }
+        }
+        achievementsEditorId = createRichEditor(
+            achievementsContainer,
+            initialHtml,
+            "Describe your achievements (e.g. Won first place in ACM ICPC Regional 2024)...",
+            true
+        );
+    }
 }
 
 
@@ -604,41 +622,7 @@ function addCertificationItem(data) {
 }
 
 
-// ── Achievements ─────────────────────────────────────────────
 
-function addAchievementItem(data) {
-    const item = document.createElement("div");
-    item.className = "list-item achievement-item";
-
-    item.innerHTML = `
-        <div class="list-item-header">
-            <span class="list-item-number"></span>
-            <button type="button" class="btn-remove"><i data-lucide="trash-2"></i> Remove</button>
-        </div>
-        <div class="form-grid">
-            <div class="form-group full-width">
-                <label>Achievement Description</label>
-                <div class="ach-title-editor-container ach-title"></div>
-                <span class="field-error"></span>
-            </div>
-        </div>
-    `;
-
-    // Initialize TipTap rich editor for achievement title (no lists)
-    const container = item.querySelector(".ach-title-editor-container");
-    const editorId = createRichEditor(container, data?.title || "", "Describe your achievement (e.g. Won first place in ACM ICPC Regional 2024)...", false);
-    item.dataset.editorId = editorId;
-
-    item.querySelector(".btn-remove").addEventListener("click", () => {
-        destroyEditorsIn(item);
-        item.remove();
-        renumberItems(achievementList, "Achievement");
-    });
-
-    achievementList.appendChild(item);
-    renumberItems(achievementList, "Achievement");
-    refreshIcons();
-}
 
 
 // ── Skills ───────────────────────────────────────────────────
@@ -845,16 +829,8 @@ function collectFormData() {
     });
 
     // ── Achievements ─────────────────────────────────────────
-    profile.achievements = [];
-    achievementList.querySelectorAll(".achievement-item").forEach(item => {
-        const editorId = item.dataset.editorId;
-        const editor = editorInstances.get(editorId);
-        const title = editor ? editor.getHTML() : "";
-
-        profile.achievements.push({
-            title: title,
-        });
-    });
+    const achievementsEditor = editorInstances.get(achievementsEditorId);
+    profile.achievements = achievementsEditor ? achievementsEditor.getHTML() : "";
 
     return profile;
 }
@@ -1039,9 +1015,14 @@ function displayErrors(errors) {
  *   ["experience", 2, "company"]     → .experience-item:nth(2) .exp-company
  */
 function locToInput(loc) {
-    if (loc.length < 2) return null;
+    if (!loc || loc.length === 0) return null;
 
     const section = loc[0];
+    if (section === "achievements") {
+        return document.getElementById("achievements-editor-container") || null;
+    }
+
+    if (loc.length < 2) return null;
 
     // ── Personal info fields ─────────────────────────────────
     if (section === "personal_info") {
@@ -1181,7 +1162,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("add-experience-btn").addEventListener("click", () => addExperienceItem());
     document.getElementById("add-project-btn").addEventListener("click", () => addProjectItem());
     document.getElementById("add-certification-btn").addEventListener("click", () => addCertificationItem());
-    document.getElementById("add-achievement-btn").addEventListener("click", () => addAchievementItem());
+
     document.getElementById("add-skill-category-btn").addEventListener("click", () => addSkillCategory());
 
     // ── Keyboard shortcut: Ctrl+S to save ────────────────────

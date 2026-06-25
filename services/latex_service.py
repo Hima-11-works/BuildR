@@ -309,10 +309,8 @@ def render_latex(profile: Profile) -> str:
         rich_fields["projects_bullets"].append(proj.pop("bullets", []))
         rich_fields["projects_list_type"].append(proj.pop("list_type", "bullet"))
 
-    # Achievement titles (these serve as the achievement descriptions)
-    rich_fields["achievements_title"] = []
-    for ach in data.get("achievements", []):
-        rich_fields["achievements_title"].append(ach.pop("title", ""))
+    # Achievements
+    rich_fields["achievements"] = data.pop("achievements", "")
 
     # Certification descriptions
     rich_fields["certifications_desc"] = []
@@ -340,9 +338,13 @@ def render_latex(profile: Profile) -> str:
         proj["bullets"] = [html_to_latex(b) for b in bullets]
 
     # Achievements
-    for i, ach in enumerate(escaped_data.get("achievements", [])):
-        title = rich_fields["achievements_title"][i]
-        ach["title"] = html_to_latex(title)
+    achievements_html = rich_fields.get("achievements", "").strip()
+    soup = BeautifulSoup(achievements_html, "html.parser")
+    has_text = bool(soup.get_text().strip())
+    if has_text:
+        escaped_data["achievements"] = html_to_latex(achievements_html)
+    else:
+        escaped_data["achievements"] = ""
 
     # Certifications
     for i, cert in enumerate(escaped_data.get("certifications", [])):

@@ -44,8 +44,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 # ─── PersonalInfo ────────────────────────────────────────────
@@ -281,17 +281,7 @@ class Certification(BaseModel):
     )
 
 
-# ─── Achievement ─────────────────────────────────────────────
-# A single notable achievement or accomplishment.
-# ──────────────────────────────────────────────────────────────
 
-class Achievement(BaseModel):
-    """A single achievement entry."""
-
-    title: str = Field(
-        ..., min_length=1,
-        description="Achievement description.",
-    )
 
 
 # ─── Profile (top-level document) ────────────────────────────
@@ -341,7 +331,32 @@ class Profile(BaseModel):
         default_factory=list,
         description="Professional certifications and credentials.",
     )
-    achievements: list[Achievement] = Field(
-        default_factory=list,
+    achievements: str = Field(
+        default="",
         description="Notable achievements and accomplishments.",
     )
+
+    @field_validator("achievements", mode="before")
+    @classmethod
+    def convert_achievements(cls, v: Any) -> Any:
+        if v is None:
+            return ""
+        if isinstance(v, list):
+            bullets = []
+            for item in v:
+                if isinstance(item, dict) and "title" in item:
+                    bullets.append(item["title"])
+                elif isinstance(item, str):
+                    bullets.append(item)
+            
+            li_items = []
+            for b in bullets:
+                content = b.strip()
+                if content.startswith("<p>") and content.endswith("</p>"):
+                    content = content[3:-4].strip()
+                if content:
+                    li_items.append(f"<li>{content}</li>")
+            if li_items:
+                return f"<ul>{''.join(li_items)}</ul>"
+            return ""
+        return v
