@@ -26,33 +26,34 @@
 
 /* ── Light Mode (Cream & Black) ────────────────────────────── */
 [data-theme="light"] {
-    --bg-base: #F5F1EA;              /* Warm off-white/cream */
-    --bg-surface: #EDE8DD;           /* Slightly darker cream */
-    --bg-card: #EDE8DD;              /* Slightly darker cream for cards */
-    --bg-input: #F5F1EA;             /* Base cream for inputs */
+    --bg-base: #EFE7DC;              /* Cozy stationery main background */
+    --bg-surface: #E7DDD0;           /* Warm beige secondary background */
+    --bg-card: #F4EEE6;              /* Soft cream cards/surfaces */
+    --bg-input: #EFE7DC;             /* Warm cream for inputs (recessed inside cards) */
     --bg-input-focus: #FFFFFF;       /* Clean white for focus */
 
-    --text-primary: #111111;         /* Near black */
-    --text-secondary: #555555;       /* Dark gray */
-    --text-muted: #888888;           /* Muted text */
-    --text-on-accent: #F5F1EA;       /* Cream text on black button */
+    --text-primary: #111111;         /* Near black primary text */
+    --text-secondary: #444444;       /* Dark charcoal secondary text */
+    --text-muted: #7E7467;           /* Subtle warm beige-gray text */
+    --text-on-accent: #F4EEE6;       /* Warm cream text on accent buttons */
 
-    --accent-solid: #111111;         /* Charcoal/Black primary */
-    --border-subtle: rgba(17, 17, 17, 0.15); /* Subtle dark border */
-    --border-accent: rgba(17, 17, 17, 0.4);  /* Accent hover border */
+    --accent-solid: #111111;         /* Black primary */
+    --accent-glow: rgba(17, 17, 17, 0.08);  /* Focus outline glow */
+    --border-subtle: #DCD1C2;        /* Soft warm beige-gray border */
+    --border-accent: #C8BBAA;        /* Warm hover border */
     --border-strong: #111111;
 
     --success: #1B4D3E;              /* Deep forest green */
     --success-bg: rgba(27, 77, 62, 0.08);
     --error: #A30000;                /* Elegant deep red */
     --error-bg: rgba(163, 0, 0, 0.08);
-    --warning: #B35C00;              /* Deep warm orange */
+    --warning: #C27800;              /* Deep warm amber */
     --danger: #A30000;
     --danger-hover: #D10000;
 
-    --shadow-card: 0 4px 20px rgba(17, 17, 17, 0.04);
-    --shadow-elevated: 0 8px 30px rgba(17, 17, 17, 0.08);
-    --shadow-glow: 0 0 15px rgba(17, 17, 17, 0.05);
+    --shadow-card: 0 4px 20px rgba(68, 62, 54, 0.04);
+    --shadow-elevated: 0 8px 30px rgba(68, 62, 54, 0.08);
+    --shadow-glow: 0 0 15px rgba(68, 62, 54, 0.05);
 }
 
 /* ── Dark Mode (Black & Cream) ────────────────────────────── */
@@ -63,15 +64,16 @@
     --bg-input: #121214;
     --bg-input-focus: #25252A;
 
-    --text-primary: #F5F1EA;         /* Cream/Off-white */
+    --text-primary: #F4EEE6;         /* Soft warm cream */
     --text-secondary: #A0A0A0;       /* Light gray */
     --text-muted: #666666;
     --text-on-accent: #121214;       /* Dark text on cream button */
 
-    --accent-solid: #F5F1EA;         /* Cream primary */
-    --border-subtle: rgba(245, 241, 234, 0.15); /* Subtle cream border */
-    --border-accent: rgba(245, 241, 234, 0.4);  /* Accent border */
-    --border-strong: #F5F1EA;
+    --accent-solid: #F4EEE6;         /* Cream primary */
+    --accent-glow: rgba(244, 238, 230, 0.15); /* Focus outline glow */
+    --border-subtle: rgba(244, 238, 230, 0.15); /* Subtle cream border */
+    --border-accent: rgba(244, 238, 230, 0.4);  /* Accent border */
+    --border-strong: #F4EEE6;
 
     --success: #52B788;              /* Soft green */
     --success-bg: rgba(82, 183, 136, 0.12);
@@ -83,7 +85,7 @@
 
     --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.5);
     --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.7);
-    --shadow-glow: 0 0 20px rgba(245, 241, 234, 0.05);
+    --shadow-glow: 0 0 20px rgba(244, 238, 230, 0.05);
 }
 
 
