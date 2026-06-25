@@ -42,9 +42,9 @@
 
 "use strict";
 
-// Import TipTap editor via jsDelivr CDN (ESM version)
-import { Editor } from 'https://cdn.jsdelivr.net/npm/@tiptap/core@2.2.2/+esm';
-import StarterKit from 'https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.2.2/+esm';
+// Import TipTap editor via esm.sh CDN (solves duplicate ProseMirror dependency issues)
+import { Editor } from 'https://esm.sh/@tiptap/core@2.2.2';
+import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.2.2';
 
 // Store TipTap editor instances
 const editorInstances = new Map();
@@ -62,7 +62,21 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
             <button type="button" class="toolbar-btn italic-btn" title="Italic (Ctrl+I)"><i data-lucide="italic"></i></button>
     `;
     if (showList) {
-        toolbarHtml += `<button type="button" class="toolbar-btn list-btn" title="Bullet List"><i data-lucide="list"></i></button>`;
+        toolbarHtml += `
+            <div class="toolbar-dropdown">
+                <button type="button" class="toolbar-btn dropdown-trigger" title="Lists">
+                    <i data-lucide="list"></i> <span class="arrow-down">▼</span>
+                </button>
+                <div class="dropdown-menu">
+                    <button type="button" class="dropdown-item bullet-list-btn" title="Bullet List">
+                        <i data-lucide="list"></i> Bullet List
+                    </button>
+                    <button type="button" class="dropdown-item ordered-list-btn" title="Numbered List">
+                        <i data-lucide="list-ordered"></i> Numbered List
+                    </button>
+                </div>
+            </div>
+        `;
     }
     toolbarHtml += `</div>`;
     
@@ -76,7 +90,6 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
     const contentEl = wrapper.querySelector(".rich-editor-content");
     const boldBtn = wrapper.querySelector(".bold-btn");
     const italicBtn = wrapper.querySelector(".italic-btn");
-    const listBtn = wrapper.querySelector(".list-btn");
     
     const editor = new Editor({
         element: contentEl,
@@ -91,7 +104,7 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
     
     editorInstances.set(editorId, editor);
     
-    // Wire toolbar buttons
+    // Wire bold & italic buttons
     boldBtn.addEventListener("click", (e) => {
         e.preventDefault();
         editor.chain().focus().toggleBold().run();
@@ -102,22 +115,57 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
         editor.chain().focus().toggleItalic().run();
     });
     
-    if (listBtn) {
-        listBtn.addEventListener("click", (e) => {
+    if (showList) {
+        const trigger = wrapper.querySelector(".dropdown-trigger");
+        const menu = wrapper.querySelector(".dropdown-menu");
+        const bulletListBtn = wrapper.querySelector(".bullet-list-btn");
+        const orderedListBtn = wrapper.querySelector(".ordered-list-btn");
+        
+        trigger.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            menu.classList.toggle("visible");
+        });
+        
+        bulletListBtn.addEventListener("click", (e) => {
             e.preventDefault();
             editor.chain().focus().toggleBulletList().run();
+            menu.classList.remove("visible");
+        });
+        
+        orderedListBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            editor.chain().focus().toggleOrderedList().run();
+            menu.classList.remove("visible");
+        });
+        
+        document.addEventListener("click", (e) => {
+            if (!wrapper.contains(e.target)) {
+                menu.classList.remove("visible");
+            }
+        });
+        
+        // Update list states inside toolbar active handlers
+        editor.on("transaction", () => {
+            boldBtn.classList.toggle("active", editor.isActive("bold"));
+            italicBtn.classList.toggle("active", editor.isActive("italic"));
+            
+            const isBulletActive = editor.isActive("bulletList");
+            const isOrderedActive = editor.isActive("orderedList");
+            
+            bulletListBtn.classList.toggle("active", isBulletActive);
+            orderedListBtn.classList.toggle("active", isOrderedActive);
+            
+            trigger.classList.toggle("active", isBulletActive || isOrderedActive);
+        });
+    } else {
+        editor.on("transaction", () => {
+            boldBtn.classList.toggle("active", editor.isActive("bold"));
+            italicBtn.classList.toggle("active", editor.isActive("italic"));
         });
     }
     
-    // Update toolbar active states on transaction (selection/state change)
-    editor.on("transaction", () => {
-        boldBtn.classList.toggle("active", editor.isActive("bold"));
-        italicBtn.classList.toggle("active", editor.isActive("italic"));
-        if (listBtn) {
-            listBtn.classList.toggle("active", editor.isActive("bulletList"));
-        }
-    });
-    
+    refreshIcons();
     return editorId;
 }
 
@@ -404,11 +452,23 @@ function addExperienceItem(data) {
         </div>
     `;
 
-    // Initialize TipTap rich editor for bullets
+    // Initialize TipTap rich editor for bullets (supporting ordered/numbered and unordered lists)
     const editorContainer = item.querySelector(".exp-bullets-editor-container");
     let initialHtml = "";
+    let isOrdered = false;
+    let cleanBullets = [];
     if (data?.bullets && data.bullets.length > 0) {
-        initialHtml = `<ul>${data.bullets.map(b => `<li>${b}</li>`).join("")}</ul>`;
+        cleanBullets = data.bullets.map((b, idx) => {
+            if (idx === 0 && b.startsWith("<ol>")) {
+                isOrdered = true;
+                return b.substring(4);
+            }
+            return b;
+        });
+    }
+    if (cleanBullets.length > 0) {
+        const listTag = isOrdered ? "ol" : "ul";
+        initialHtml = `<${listTag}>${cleanBullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
     } else {
         initialHtml = "<ul><li></li></ul>";
     }
@@ -469,11 +529,23 @@ function addProjectItem(data) {
     const descEditorId = createRichEditor(descContainer, data?.description || "", "One-line summary of the project...", false);
     item.dataset.descEditorId = descEditorId;
 
-    // Initialize TipTap rich editor for bullets
+    // Initialize TipTap rich editor for bullets (supporting ordered/numbered and unordered lists)
     const bulletsContainer = item.querySelector(".proj-bullets-editor-container");
     let projBulletsHtml = "";
+    let isProjOrdered = false;
+    let cleanProjBullets = [];
     if (data?.bullets && data.bullets.length > 0) {
-        projBulletsHtml = `<ul>${data.bullets.map(b => `<li>${b}</li>`).join("")}</ul>`;
+        cleanProjBullets = data.bullets.map((b, idx) => {
+            if (idx === 0 && b.startsWith("<ol>")) {
+                isProjOrdered = true;
+                return b.substring(4);
+            }
+            return b;
+        });
+    }
+    if (cleanProjBullets.length > 0) {
+        const listTag = isProjOrdered ? "ol" : "ul";
+        projBulletsHtml = `<${listTag}>${cleanProjBullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
     } else {
         projBulletsHtml = "<ul><li></li></ul>";
     }
