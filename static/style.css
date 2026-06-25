@@ -901,3 +901,98 @@ body:not(.no-transition) .theme-toggle {
         max-width: 100%;
     }
 }
+
+/* ── Rich Text Editor (TipTap) ────────────────────────────── */
+.rich-editor-wrapper {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.rich-editor-wrapper:focus-within {
+    background: var(--bg-input-focus);
+    border-color: var(--accent-solid);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.rich-editor-toolbar {
+    display: flex;
+    gap: var(--space-xs);
+    background: var(--bg-surface);
+    padding: var(--space-xs) var(--space-sm);
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: center;
+}
+
+.toolbar-btn {
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+}
+
+.toolbar-btn i {
+    width: 16px;
+    height: 16px;
+    stroke-width: 2.2px;
+}
+
+.toolbar-btn:hover {
+    background: rgba(17, 17, 17, 0.05);
+}
+
+[data-theme="dark"] .toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.toolbar-btn.active {
+    background: var(--accent-solid);
+    color: var(--text-on-accent);
+}
+
+.rich-editor-content {
+    padding: var(--space-sm) var(--space-md);
+    min-height: 100px;
+    outline: none;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+    background: transparent;
+}
+
+.rich-editor-content .ProseMirror {
+    outline: none;
+    min-height: 100px;
+}
+
+/* Style list items inside TipTap */
+.rich-editor-content .ProseMirror ul {
+    margin-left: 1.25rem;
+    padding-left: 0;
+    list-style-type: disc;
+}
+
+.rich-editor-content .ProseMirror li {
+    margin-bottom: 0.25rem;
+}
+
+.rich-editor-content .ProseMirror p {
+    margin-bottom: 0.5rem;
+}
+
+.rich-editor-content .ProseMirror p:last-child {
+    margin-bottom: 0;
+}
+

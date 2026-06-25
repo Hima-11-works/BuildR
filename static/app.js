@@ -40,7 +40,125 @@
 // a JS object and the form.  The form IS the data.
 // ──────────────────────────────────────────────────────────────
 
-"use strict"; //strict mode of js is activated
+"use strict";
+
+// Import TipTap editor via jsDelivr CDN (ESM version)
+import { Editor } from 'https://cdn.jsdelivr.net/npm/@tiptap/core@2.2.2/+esm';
+import StarterKit from 'https://cdn.jsdelivr.net/npm/@tiptap/starter-kit@2.2.2/+esm';
+
+// Store TipTap editor instances
+const editorInstances = new Map();
+
+// Helper to create and initialize TipTap rich editors
+function createRichEditor(parentElement, initialHtml, placeholder, showList = false) {
+    const editorId = "editor-" + Math.random().toString(36).substring(2, 9);
+    
+    const wrapper = document.createElement("div");
+    wrapper.className = "rich-editor-wrapper";
+    
+    let toolbarHtml = `
+        <div class="rich-editor-toolbar">
+            <button type="button" class="toolbar-btn bold-btn" title="Bold (Ctrl+B)"><i data-lucide="bold"></i></button>
+            <button type="button" class="toolbar-btn italic-btn" title="Italic (Ctrl+I)"><i data-lucide="italic"></i></button>
+    `;
+    if (showList) {
+        toolbarHtml += `<button type="button" class="toolbar-btn list-btn" title="Bullet List"><i data-lucide="list"></i></button>`;
+    }
+    toolbarHtml += `</div>`;
+    
+    wrapper.innerHTML = `
+        ${toolbarHtml}
+        <div class="rich-editor-content" data-editor-id="${editorId}"></div>
+    `;
+    
+    parentElement.appendChild(wrapper);
+    
+    const contentEl = wrapper.querySelector(".rich-editor-content");
+    const boldBtn = wrapper.querySelector(".bold-btn");
+    const italicBtn = wrapper.querySelector(".italic-btn");
+    const listBtn = wrapper.querySelector(".list-btn");
+    
+    const editor = new Editor({
+        element: contentEl,
+        extensions: [StarterKit],
+        content: initialHtml || "",
+    });
+    
+    // Set placeholder on content area if empty
+    if (placeholder) {
+        contentEl.querySelector(".ProseMirror").setAttribute("data-placeholder", placeholder);
+    }
+    
+    editorInstances.set(editorId, editor);
+    
+    // Wire toolbar buttons
+    boldBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        editor.chain().focus().toggleBold().run();
+    });
+    
+    italicBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        editor.chain().focus().toggleItalic().run();
+    });
+    
+    if (listBtn) {
+        listBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            editor.chain().focus().toggleBulletList().run();
+        });
+    }
+    
+    // Update toolbar active states on transaction (selection/state change)
+    editor.on("transaction", () => {
+        boldBtn.classList.toggle("active", editor.isActive("bold"));
+        italicBtn.classList.toggle("active", editor.isActive("italic"));
+        if (listBtn) {
+            listBtn.classList.toggle("active", editor.isActive("bulletList"));
+        }
+    });
+    
+    return editorId;
+}
+
+// Helper to destroy editors inside a removed list item
+function destroyEditorsIn(element) {
+    element.querySelectorAll("[data-editor-id]").forEach(el => {
+        const id = el.dataset.editorId;
+        const editor = editorInstances.get(id);
+        if (editor) {
+            editor.destroy();
+            editorInstances.delete(id);
+        }
+    });
+}
+
+// Helper to parse bullet list items from TipTap editor HTML
+function parseBulletsFromHtml(html) {
+    if (!html || html === "<p></p>" || html === "<p><br></p>") return [];
+    
+    const temp = document.createElement("div");
+    temp.innerHTML = html;
+    
+    // Try to find list items (li)
+    const lis = temp.querySelectorAll("li");
+    if (lis.length > 0) {
+        return Array.from(lis).map(li => li.innerHTML.trim()).filter(Boolean);
+    }
+    
+    // Try to find paragraphs (p)
+    const paragraphs = temp.querySelectorAll("p");
+    if (paragraphs.length > 0) {
+        return Array.from(paragraphs).map(p => p.innerHTML.trim()).filter(Boolean);
+    }
+    
+    const cleanHTML = temp.innerHTML.trim();
+    if (cleanHTML && cleanHTML !== "<br>") {
+        return [cleanHTML];
+    }
+    
+    return [];
+}
 
 // ── DOM references ──────────────────────────────────────────
 const saveBtn         = document.getElementById("save-btn");
@@ -275,21 +393,30 @@ function addExperienceItem(data) {
                 <select class="exp-work-mode">${workModeOptionsHtml}</select>
             </div>
             <div class="form-group full-width">
-                <label>Bullet Points (one per line)</label>
-                <textarea class="exp-bullets" rows="4" placeholder="e.g.&#10;Built a microservice that reduced latency by 40%&#10;Led a team of 3 engineers on the search feature">${escapeHtml((data?.bullets || []).join("\n"))}</textarea>
+                <label>Description / Bullet Points</label>
+                <div class="exp-bullets-editor-container exp-bullets"></div>
+                <span class="field-error"></span>
             </div>
             <div class="form-group full-width">
                 <label>Technologies (comma-separated)</label>
                 <input type="text" class="exp-technologies" placeholder="e.g. Python, Flask, PostgreSQL, Docker" value="${escapeAttr((data?.technologies || []).join(", "))}">
             </div>
-            <div class="form-group full-width">
-                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
-                <input type="text" class="exp-highlight-keywords" placeholder="e.g. 300+ CP, Codeforces, 40% latency reduction" value="${escapeAttr(data?.highlight_keywords || "")}">
-            </div>
         </div>
     `;
 
+    // Initialize TipTap rich editor for bullets
+    const editorContainer = item.querySelector(".exp-bullets-editor-container");
+    let initialHtml = "";
+    if (data?.bullets && data.bullets.length > 0) {
+        initialHtml = `<ul>${data.bullets.map(b => `<li>${b}</li>`).join("")}</ul>`;
+    } else {
+        initialHtml = "<ul><li></li></ul>";
+    }
+    const editorId = createRichEditor(editorContainer, initialHtml, "Describe your achievements and responsibilities...", true);
+    item.dataset.bulletsEditorId = editorId;
+
     item.querySelector(".btn-remove").addEventListener("click", () => {
+        destroyEditorsIn(item);
         item.remove();
         renumberItems(experienceList, "Experience");
     });
@@ -322,24 +449,39 @@ function addProjectItem(data) {
             </div>
             <div class="form-group full-width">
                 <label>Description</label>
-                <input type="text" class="proj-description" placeholder="One-line summary of the project" value="${escapeAttr(data?.description || "")}">
+                <div class="proj-description-editor-container proj-description"></div>
+                <span class="field-error"></span>
             </div>
             <div class="form-group full-width">
-                <label>Key Highlights (one per line)</label>
-                <textarea class="proj-bullets" rows="3" placeholder="e.g.&#10;Implemented real-time chat with WebSockets&#10;Achieved 95% test coverage">${escapeHtml((data?.bullets || []).join("\n"))}</textarea>
+                <label>Key Highlights</label>
+                <div class="proj-bullets-editor-container proj-bullets"></div>
+                <span class="field-error"></span>
             </div>
             <div class="form-group full-width">
                 <label>Technologies (comma-separated)</label>
                 <input type="text" class="proj-technologies" placeholder="e.g. React, Node.js, MongoDB" value="${escapeAttr((data?.technologies || []).join(", "))}">
             </div>
-            <div class="form-group full-width">
-                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
-                <input type="text" class="proj-highlight-keywords" placeholder="e.g. WebSockets, 95% test coverage" value="${escapeAttr(data?.highlight_keywords || "")}">
-            </div>
         </div>
     `;
 
+    // Initialize TipTap rich editor for description (no list)
+    const descContainer = item.querySelector(".proj-description-editor-container");
+    const descEditorId = createRichEditor(descContainer, data?.description || "", "One-line summary of the project...", false);
+    item.dataset.descEditorId = descEditorId;
+
+    // Initialize TipTap rich editor for bullets
+    const bulletsContainer = item.querySelector(".proj-bullets-editor-container");
+    let projBulletsHtml = "";
+    if (data?.bullets && data.bullets.length > 0) {
+        projBulletsHtml = `<ul>${data.bullets.map(b => `<li>${b}</li>`).join("")}</ul>`;
+    } else {
+        projBulletsHtml = "<ul><li></li></ul>";
+    }
+    const bulletsEditorId = createRichEditor(bulletsContainer, projBulletsHtml, "Key accomplishments / technical highlights...", true);
+    item.dataset.bulletsEditorId = bulletsEditorId;
+
     item.querySelector(".btn-remove").addEventListener("click", () => {
+        destroyEditorsIn(item);
         item.remove();
         renumberItems(projectList, "Project");
     });
@@ -374,10 +516,21 @@ function addCertificationItem(data) {
                 <label>Date</label>
                 <input type="text" class="cert-date" placeholder="e.g. Mar 2024" value="${escapeAttr(data?.date || "")}">
             </div>
+            <div class="form-group full-width">
+                <label>Description (optional)</label>
+                <div class="cert-description-editor-container cert-description"></div>
+                <span class="field-error"></span>
+            </div>
         </div>
     `;
 
+    // Initialize TipTap rich editor for description (no list)
+    const container = item.querySelector(".cert-description-editor-container");
+    const editorId = createRichEditor(container, data?.description || "", "Describe details of the certification...", false);
+    item.dataset.editorId = editorId;
+
     item.querySelector(".btn-remove").addEventListener("click", () => {
+        destroyEditorsIn(item);
         item.remove();
         renumberItems(certificationList, "Certification");
     });
@@ -401,17 +554,20 @@ function addAchievementItem(data) {
         </div>
         <div class="form-grid">
             <div class="form-group full-width">
-                <label>Achievement</label>
-                <input type="text" class="ach-title" placeholder="e.g. Won first place in ACM ICPC Regional 2024" value="${escapeAttr(data?.title || '')}">
-            </div>
-            <div class="form-group full-width">
-                <label>Highlight Keywords (comma-separated phrases to bold in PDF)</label>
-                <input type="text" class="ach-highlight-keywords" placeholder="e.g. first place, ACM ICPC" value="${escapeAttr(data?.highlight_keywords || '')}">
+                <label>Achievement Description</label>
+                <div class="ach-title-editor-container ach-title"></div>
+                <span class="field-error"></span>
             </div>
         </div>
     `;
 
+    // Initialize TipTap rich editor for achievement title (no lists)
+    const container = item.querySelector(".ach-title-editor-container");
+    const editorId = createRichEditor(container, data?.title || "", "Describe your achievement (e.g. Won first place in ACM ICPC Regional 2024)...", false);
+    item.dataset.editorId = editorId;
+
     item.querySelector(".btn-remove").addEventListener("click", () => {
+        destroyEditorsIn(item);
         item.remove();
         renumberItems(achievementList, "Achievement");
     });
@@ -545,40 +701,49 @@ function collectFormData() {
     // ── Experience ───────────────────────────────────────────
     profile.experience = [];
     experienceList.querySelectorAll(".experience-item").forEach(item => {
-        const bulletsTxt = item.querySelector(".exp-bullets").value;
-        const techTxt    = item.querySelector(".exp-technologies").value.trim();
-
+        const techTxt = item.querySelector(".exp-technologies").value.trim();
         const workMode = item.querySelector(".exp-work-mode").value || null;
-        const highlightKw = item.querySelector(".exp-highlight-keywords").value;
+        
+        // Extract rich text from TipTap editor
+        const editorId = item.dataset.bulletsEditorId;
+        const editor = editorInstances.get(editorId);
+        const editorHtml = editor ? editor.getHTML() : "";
+        const bullets = parseBulletsFromHtml(editorHtml);
 
         profile.experience.push({
-            company:            item.querySelector(".exp-company").value,
-            role:               item.querySelector(".exp-role").value,
-            start_date:         item.querySelector(".exp-start-date").value,
-            end_date:           item.querySelector(".exp-end-date").value,
-            work_mode:          workMode,
-            bullets:            bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
-            technologies:       techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
-            highlight_keywords: highlightKw,
+            company:      item.querySelector(".exp-company").value,
+            role:         item.querySelector(".exp-role").value,
+            start_date:   item.querySelector(".exp-start-date").value,
+            end_date:     item.querySelector(".exp-end-date").value,
+            work_mode:    workMode,
+            bullets:      bullets,
+            technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
         });
     });
 
     // ── Projects ─────────────────────────────────────────────
     profile.projects = [];
     projectList.querySelectorAll(".project-item").forEach(item => {
-        const bulletsTxt = item.querySelector(".proj-bullets").value;
-        const techTxt    = item.querySelector(".proj-technologies").value.trim();
-        const linkVal    = item.querySelector(".proj-link").value.trim();
+        const techTxt = item.querySelector(".proj-technologies").value.trim();
+        const linkVal = item.querySelector(".proj-link").value.trim();
 
-        const projHighlightKw = item.querySelector(".proj-highlight-keywords").value;
+        // Extract description from TipTap
+        const descEditorId = item.dataset.descEditorId;
+        const descEditor = editorInstances.get(descEditorId);
+        const description = descEditor ? descEditor.getHTML() : "";
+
+        // Extract bullets from TipTap
+        const bulletsEditorId = item.dataset.bulletsEditorId;
+        const bulletsEditor = editorInstances.get(bulletsEditorId);
+        const bulletsHtml = bulletsEditor ? bulletsEditor.getHTML() : "";
+        const bullets = parseBulletsFromHtml(bulletsHtml);
 
         profile.projects.push({
-            name:               item.querySelector(".proj-name").value,
-            description:        item.querySelector(".proj-description").value,
-            bullets:            bulletsTxt.split("\n").map(s => s.trim()).filter(Boolean),
-            technologies:       techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
-            link:               linkVal || null,
-            highlight_keywords: projHighlightKw,
+            name:         item.querySelector(".proj-name").value,
+            description:  description,
+            bullets:      bullets,
+            technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
+            link:         linkVal || null,
         });
     });
 
@@ -598,19 +763,27 @@ function collectFormData() {
     // ── Certifications ───────────────────────────────────────
     profile.certifications = [];
     certificationList.querySelectorAll(".certification-item").forEach(item => {
+        const editorId = item.dataset.editorId;
+        const editor = editorInstances.get(editorId);
+        const description = editor ? editor.getHTML() : "";
+
         profile.certifications.push({
-            name:   item.querySelector(".cert-name").value,
-            issuer: item.querySelector(".cert-issuer").value,
-            date:   item.querySelector(".cert-date").value,
+            name:        item.querySelector(".cert-name").value,
+            issuer:      item.querySelector(".cert-issuer").value,
+            date:        item.querySelector(".cert-date").value,
+            description: description,
         });
     });
 
     // ── Achievements ─────────────────────────────────────────
     profile.achievements = [];
     achievementList.querySelectorAll(".achievement-item").forEach(item => {
+        const editorId = item.dataset.editorId;
+        const editor = editorInstances.get(editorId);
+        const title = editor ? editor.getHTML() : "";
+
         profile.achievements.push({
-            title:              item.querySelector(".ach-title").value,
-            highlight_keywords: item.querySelector(".ach-highlight-keywords").value,
+            title: title,
         });
     });
 
@@ -832,12 +1005,12 @@ function locToInput(loc) {
             gpa: "gpa", coursework: "coursework",
             // Experience
             company: "company", role: "role",
-            bullets: "bullets", technologies: "technologies",
+            bullets: "bullets-editor-container", technologies: "technologies",
             // Projects
-            name: "name", description: "description",
-            link: "link",
+            name: "name", description: "description-editor-container",
+            bullets: "bullets-editor-container", link: "link",
             // Certifications
-            issuer: "issuer", date: "date",
+            issuer: "issuer", date: "date", description: "description-editor-container",
         };
 
         const mappedField = fieldMap[field] || field;

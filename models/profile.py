@@ -185,13 +185,6 @@ class Experience(BaseModel):
         default_factory=list,
         description="Technologies / tools used in this role.",
     )
-    highlight_keywords: str = Field(
-        default="",
-        description=(
-            "Comma-separated keywords/phrases to bold in bullet points "
-            "when rendering the PDF."
-        ),
-    )
 
 
 # ─── Project ─────────────────────────────────────────────────
@@ -224,13 +217,6 @@ class Project(BaseModel):
     link: Optional[str] = Field(
         default=None,
         description="URL to repo, live demo, or write-up.",
-    )
-    highlight_keywords: str = Field(
-        default="",
-        description=(
-            "Comma-separated keywords/phrases to bold in bullet points "
-            "when rendering the PDF."
-        ),
     )
 
 
@@ -281,6 +267,10 @@ class Certification(BaseModel):
         ...,
         description="Date earned (flexible format).",
     )
+    description: Optional[str] = Field(
+        default="",
+        description="Optional rich-text details or description of the certification.",
+    )
 
 
 # ─── Achievement ─────────────────────────────────────────────
@@ -293,13 +283,6 @@ class Achievement(BaseModel):
     title: str = Field(
         ..., min_length=1,
         description="Achievement description.",
-    )
-    highlight_keywords: str = Field(
-        default="",
-        description=(
-            "Comma-separated keywords/phrases to bold in the achievement "
-            "when rendering the PDF."
-        ),
     )
 
 

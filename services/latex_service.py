@@ -53,6 +53,8 @@ from pathlib import Path
 from typing import Any
 
 import jinja2
+import bs4
+from bs4 import BeautifulSoup
 
 from models.profile import Profile
 
@@ -199,67 +201,69 @@ def _create_latex_env() -> jinja2.Environment:
 
 
 # ══════════════════════════════════════════════════════════════
-# 3. KEYWORD HIGHLIGHTING
+# 3. HTML TO LATEX CONVERTER (For Rich Text Fields)
 # ══════════════════════════════════════════════════════════════
 
-def _apply_highlights(text: str, keywords_csv: str) -> str:
+def html_to_latex(html_str: str) -> str:
     """
-    Bold specific keywords/phrases in an already-escaped LaTeX string.
-
-    Parameters
-    ----------
-    text : str
-        An already LaTeX-escaped string (e.g. a bullet point).
-    keywords_csv : str
-        Comma-separated list of keywords to highlight.
-        Each keyword is escaped with escape_latex() before matching
-        so that the replacement aligns with the escaped text.
-
-    Returns
-    -------
-    str
-        The text with matching phrases wrapped in \\textbf{…}.
+    Parse a rich HTML string (e.g. from the TipTap editor) and
+    convert its formatting tags (bold, italic, lists, links) into
+    LaTeX equivalents. Non-rich text content is fully escaped.
     """
-    if not keywords_csv or not keywords_csv.strip():
-        return text
-    for raw_kw in keywords_csv.split(","):
-        raw_kw = raw_kw.strip()
-        if not raw_kw:
-            continue
-        # Escape the keyword the same way the text was escaped
-        escaped_kw = escape_latex(raw_kw)
-        if escaped_kw in text:
-            text = text.replace(escaped_kw, r"\textbf{" + escaped_kw + "}")
-    return text
+    if not html_str:
+        return ""
+    
+    html_str = html_str.strip()
+    if not html_str:
+        return ""
+        
+    soup = BeautifulSoup(html_str, "html.parser")
+    result = _node_to_latex(soup)
+    return result.strip()
 
 
-def _highlight_entries(escaped_data: dict) -> dict:
+def _node_to_latex(node: bs4.PageElement) -> str:
     """
-    Walk through experience, projects, and achievements in the
-    already-escaped profile data and apply keyword highlighting
-    to bullet points and achievement titles.
-
-    This must be called AFTER _escape_recursive() so that both
-    the text and the keywords have been through the same escaping.
-    The \\textbf{} commands we inject are raw LaTeX — they will
-    NOT be escaped because we add them after the escaping pass.
+    Recursively walk BS4 elements and map HTML formatting tags
+    to LaTeX commands, while escaping plain text leaf nodes.
     """
-    # Experience bullets
-    for exp in escaped_data.get("experience", []):
-        kw_csv = exp.get("highlight_keywords", "")
-        exp["bullets"] = [_apply_highlights(b, kw_csv) for b in exp.get("bullets", [])]
-
-    # Project bullets
-    for proj in escaped_data.get("projects", []):
-        kw_csv = proj.get("highlight_keywords", "")
-        proj["bullets"] = [_apply_highlights(b, kw_csv) for b in proj.get("bullets", [])]
-
-    # Achievement titles
-    for ach in escaped_data.get("achievements", []):
-        kw_csv = ach.get("highlight_keywords", "")
-        ach["title"] = _apply_highlights(ach.get("title", ""), kw_csv)
-
-    return escaped_data
+    if isinstance(node, bs4.NavigableString):
+        # Escaping LaTeX specials on plain text string leaf node
+        return escape_latex(str(node))
+        
+    if isinstance(node, bs4.Tag):
+        name = node.name.lower()
+        if name in ("strong", "b"):
+            return r"\textbf{" + "".join(_node_to_latex(c) for c in node.children) + "}"
+        elif name in ("em", "i"):
+            return r"\textit{" + "".join(_node_to_latex(c) for c in node.children) + "}"
+        elif name == "ul":
+            inner = "".join(_node_to_latex(c) for c in node.children).strip()
+            if not inner:
+                return ""
+            return r"\begin{itemize}" + "\n" + inner + "\n" + r"\end{itemize}"
+        elif name == "li":
+            inner = "".join(_node_to_latex(c) for c in node.children).strip()
+            return r"\item " + inner + "\n"
+        elif name == "br":
+            return "\n"
+        elif name in ("p", "div"):
+            inner = "".join(_node_to_latex(c) for c in node.children).strip()
+            if not inner:
+                return ""
+            return inner + "\n"
+        elif name == "a":
+            href = node.get("href", "")
+            inner = "".join(_node_to_latex(c) for c in node.children)
+            if href:
+                return r"\href{" + escape_latex(href) + r"}{" + inner + r"}"
+            return inner
+        else:
+            # Fallback for generic styling tags: process children
+            return "".join(_node_to_latex(c) for c in node.children)
+            
+    # BeautifulSoup root or other node types
+    return "".join(_node_to_latex(c) for c in node.children)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -273,36 +277,66 @@ def render_latex(profile: Profile) -> str:
     PIPELINE
     --------
     1. Convert the Profile to a plain dict via .model_dump().
-    2. Deep-escape every string in that dict (escape_latex on all leaves).
-    3. Apply keyword highlighting (bold matching phrases).
-    4. Load the resume.tex Jinja2 template.
-    5. Render with the escaped data → final .tex source.
-
-    Parameters
-    ----------
-    profile : Profile
-        The validated user profile (from storage or API).
-
-    Returns
-    -------
-    str
-        A complete LaTeX document ready to be compiled by Tectonic.
+    2. Extract rich text fields to prevent double-escaping.
+    3. Deep-escape remaining plain text fields recursively.
+    4. Translate HTML tags in rich text fields to LaTeX.
+    5. Load templates_latex/resume.tex and render with data.
     """
     # ── Step 1: Profile → dict ────────────────────────────────
     data = profile.model_dump()
 
-    # ── Step 2: Escape all strings ────────────────────────────
-    # We do this BEFORE rendering so the template never sees raw
-    # user input.  The template's \VAR{ name } will receive the
-    # already-safe "AT\&T" instead of the dangerous "AT&T".
+    # ── Step 2: Extract rich text fields ──────────────────────
+    rich_fields = {}
+    
+    # Experience bullets
+    rich_fields["experience_bullets"] = []
+    for exp in data.get("experience", []):
+        rich_fields["experience_bullets"].append(exp.pop("bullets", []))
+
+    # Project description & bullets
+    rich_fields["projects_desc"] = []
+    rich_fields["projects_bullets"] = []
+    for proj in data.get("projects", []):
+        rich_fields["projects_desc"].append(proj.pop("description", ""))
+        rich_fields["projects_bullets"].append(proj.pop("bullets", []))
+
+    # Achievement titles (these serve as the achievement descriptions)
+    rich_fields["achievements_title"] = []
+    for ach in data.get("achievements", []):
+        rich_fields["achievements_title"].append(ach.pop("title", ""))
+
+    # Certification descriptions
+    rich_fields["certifications_desc"] = []
+    for cert in data.get("certifications", []):
+        rich_fields["certifications_desc"].append(cert.pop("description", ""))
+
+    # ── Step 3: Escape plain text fields recursively ──────────
     escaped_data = _escape_recursive(data)
 
-    # ── Step 3: Apply keyword highlighting ────────────────────
-    # This wraps user-specified keywords in \textbf{} AFTER
-    # escaping, so the LaTeX commands are not themselves escaped.
-    escaped_data = _highlight_entries(escaped_data)
+    # ── Step 4: Convert and restore rich text fields ──────────
+    # Experience
+    for i, exp in enumerate(escaped_data.get("experience", [])):
+        bullets = rich_fields["experience_bullets"][i]
+        exp["bullets"] = [html_to_latex(b) for b in bullets]
 
-    # ── Step 4–5: Load template and render ────────────────────
+    # Projects
+    for i, proj in enumerate(escaped_data.get("projects", [])):
+        desc = rich_fields["projects_desc"][i]
+        bullets = rich_fields["projects_bullets"][i]
+        proj["description"] = html_to_latex(desc)
+        proj["bullets"] = [html_to_latex(b) for b in bullets]
+
+    # Achievements
+    for i, ach in enumerate(escaped_data.get("achievements", [])):
+        title = rich_fields["achievements_title"][i]
+        ach["title"] = html_to_latex(title)
+
+    # Certifications
+    for i, cert in enumerate(escaped_data.get("certifications", [])):
+        desc = rich_fields["certifications_desc"][i]
+        cert["description"] = html_to_latex(desc)
+
+    # ── Step 5: Load template and render ──────────────────────
     env = _create_latex_env()
     template = env.get_template("resume.tex")
     tex_string = template.render(**escaped_data)
