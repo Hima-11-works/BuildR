@@ -181,6 +181,10 @@ class Experience(BaseModel):
             "Keep each one atomic — the AI will mix & match."
         ),
     )
+    list_type: Optional[str] = Field(
+        default="bullet",
+        description="Type of list formatting: 'bullet' or 'numbered'.",
+    )
     technologies: list[str] = Field(
         default_factory=list,
         description="Technologies / tools used in this role.",
@@ -209,6 +213,10 @@ class Project(BaseModel):
     bullets: list[str] = Field(
         default_factory=list,
         description="Key accomplishments / technical highlights.",
+    )
+    list_type: Optional[str] = Field(
+        default="bullet",
+        description="Type of list formatting: 'bullet' or 'numbered'.",
     )
     technologies: list[str] = Field(
         default_factory=list,

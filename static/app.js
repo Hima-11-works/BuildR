@@ -65,14 +65,14 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
         toolbarHtml += `
             <div class="toolbar-dropdown">
                 <button type="button" class="toolbar-btn dropdown-trigger" title="Lists">
-                    <i data-lucide="list"></i> <span class="arrow-down">▼</span>
+                    List <span class="arrow-down">▼</span>
                 </button>
                 <div class="dropdown-menu">
                     <button type="button" class="dropdown-item bullet-list-btn" title="Bullet List">
-                        <i data-lucide="list"></i> Bullet List
+                        <span class="check-indicator"></span>Bullet List
                     </button>
                     <button type="button" class="dropdown-item ordered-list-btn" title="Numbered List">
-                        <i data-lucide="list-ordered"></i> Numbered List
+                        <span class="check-indicator"></span>Numbered List
                     </button>
                 </div>
             </div>
@@ -152,6 +152,11 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
             
             const isBulletActive = editor.isActive("bulletList");
             const isOrderedActive = editor.isActive("orderedList");
+            
+            const bulletCheck = bulletListBtn.querySelector(".check-indicator");
+            const orderedCheck = orderedListBtn.querySelector(".check-indicator");
+            if (bulletCheck) bulletCheck.textContent = isBulletActive ? "✓" : "";
+            if (orderedCheck) orderedCheck.textContent = isOrderedActive ? "✓" : "";
             
             bulletListBtn.classList.toggle("active", isBulletActive);
             orderedListBtn.classList.toggle("active", isOrderedActive);
@@ -455,20 +460,13 @@ function addExperienceItem(data) {
     // Initialize TipTap rich editor for bullets (supporting ordered/numbered and unordered lists)
     const editorContainer = item.querySelector(".exp-bullets-editor-container");
     let initialHtml = "";
-    let isOrdered = false;
-    let cleanBullets = [];
-    if (data?.bullets && data.bullets.length > 0) {
-        cleanBullets = data.bullets.map((b, idx) => {
-            if (idx === 0 && b.startsWith("<ol>")) {
-                isOrdered = true;
-                return b.substring(4);
-            }
-            return b;
-        });
-    }
-    if (cleanBullets.length > 0) {
+    const listType = data?.list_type || "bullet";
+    const isOrdered = listType === "numbered";
+    const bullets = data?.bullets || [];
+    
+    if (bullets.length > 0) {
         const listTag = isOrdered ? "ol" : "ul";
-        initialHtml = `<${listTag}>${cleanBullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
+        initialHtml = `<${listTag}>${bullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
     } else {
         initialHtml = "<ul><li></li></ul>";
     }
@@ -532,20 +530,13 @@ function addProjectItem(data) {
     // Initialize TipTap rich editor for bullets (supporting ordered/numbered and unordered lists)
     const bulletsContainer = item.querySelector(".proj-bullets-editor-container");
     let projBulletsHtml = "";
-    let isProjOrdered = false;
-    let cleanProjBullets = [];
-    if (data?.bullets && data.bullets.length > 0) {
-        cleanProjBullets = data.bullets.map((b, idx) => {
-            if (idx === 0 && b.startsWith("<ol>")) {
-                isProjOrdered = true;
-                return b.substring(4);
-            }
-            return b;
-        });
-    }
-    if (cleanProjBullets.length > 0) {
+    const listType = data?.list_type || "bullet";
+    const isProjOrdered = listType === "numbered";
+    const bullets = data?.bullets || [];
+    
+    if (bullets.length > 0) {
         const listTag = isProjOrdered ? "ol" : "ul";
-        projBulletsHtml = `<${listTag}>${cleanProjBullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
+        projBulletsHtml = `<${listTag}>${bullets.map(b => `<li>${b}</li>`).join("")}</${listTag}>`;
     } else {
         projBulletsHtml = "<ul><li></li></ul>";
     }
@@ -781,6 +772,8 @@ function collectFormData() {
         const editor = editorInstances.get(editorId);
         const editorHtml = editor ? editor.getHTML() : "";
         const bullets = parseBulletsFromHtml(editorHtml);
+        const isNumbered = editor ? editor.isActive("orderedList") : editorHtml.includes("<ol>");
+        const listType = isNumbered ? "numbered" : "bullet";
 
         profile.experience.push({
             company:      item.querySelector(".exp-company").value,
@@ -789,6 +782,7 @@ function collectFormData() {
             end_date:     item.querySelector(".exp-end-date").value,
             work_mode:    workMode,
             bullets:      bullets,
+            list_type:    listType,
             technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
         });
     });
@@ -809,11 +803,14 @@ function collectFormData() {
         const bulletsEditor = editorInstances.get(bulletsEditorId);
         const bulletsHtml = bulletsEditor ? bulletsEditor.getHTML() : "";
         const bullets = parseBulletsFromHtml(bulletsHtml);
+        const isProjNumbered = bulletsEditor ? bulletsEditor.isActive("orderedList") : bulletsHtml.includes("<ol>");
+        const listType = isProjNumbered ? "numbered" : "bullet";
 
         profile.projects.push({
             name:         item.querySelector(".proj-name").value,
             description:  description,
             bullets:      bullets,
+            list_type:    listType,
             technologies: techTxt ? techTxt.split(",").map(s => s.trim()).filter(Boolean) : [],
             link:         linkVal || null,
         });

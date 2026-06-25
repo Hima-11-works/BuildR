@@ -909,56 +909,154 @@ body:not(.no-transition) .theme-toggle {
     background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    overflow: hidden;
+    overflow: visible; /* Required so dropdown is not clipped */
     transition: all var(--transition-fast);
 }
 
 .rich-editor-wrapper:focus-within {
     background: var(--bg-input-focus);
     border-color: var(--accent-solid);
-    box-shadow: 0 0 0 3px var(--accent-glow);
+    box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
 .rich-editor-toolbar {
     display: flex;
-    gap: var(--space-xs);
+    gap: 4px;
     background: var(--bg-surface);
-    padding: var(--space-xs) var(--space-sm);
+    padding: 4px 6px;
     border-bottom: 1px solid var(--border-subtle);
     align-items: center;
+    user-select: none;
+    position: relative;
 }
 
 .toolbar-btn {
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
-    width: 32px;
-    height: 32px;
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: var(--text-primary);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
     transition: all var(--transition-fast);
 }
 
 .toolbar-btn i {
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
     stroke-width: 2.2px;
 }
 
 .toolbar-btn:hover {
-    background: rgba(17, 17, 17, 0.05);
+    background: rgba(17, 17, 17, 0.06);
+    color: var(--text-primary);
 }
 
 [data-theme="dark"] .toolbar-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
 }
 
 .toolbar-btn.active {
     background: var(--accent-solid);
     color: var(--text-on-accent);
+}
+
+/* Dropdown layout & styling */
+.toolbar-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-trigger {
+    width: auto;
+    min-width: 54px;
+    padding: 0 6px;
+    gap: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.dropdown-trigger .arrow-down {
+    font-size: 0.6rem;
+    opacity: 0.7;
+    margin-left: 1px;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 12px rgba(68, 62, 54, 0.08), 0 1px 3px rgba(68, 62, 54, 0.04);
+    z-index: 100;
+    min-width: 140px;
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.dropdown-menu.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.dropdown-item {
+    background: transparent;
+    border: none;
+    padding: 6px 12px;
+    text-align: left;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    transition: all var(--transition-fast);
+}
+
+.dropdown-item:hover {
+    background: rgba(17, 17, 17, 0.06);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+}
+
+.dropdown-item.active {
+    background: var(--accent-solid);
+    color: var(--text-on-accent);
+}
+
+.check-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: inherit;
+    margin-right: 6px;
 }
 
 .rich-editor-content {
@@ -982,6 +1080,12 @@ body:not(.no-transition) .theme-toggle {
     margin-left: 1.25rem;
     padding-left: 0;
     list-style-type: disc;
+}
+
+.rich-editor-content .ProseMirror ol {
+    margin-left: 1.25rem;
+    padding-left: 0;
+    list-style-type: decimal;
 }
 
 .rich-editor-content .ProseMirror li {

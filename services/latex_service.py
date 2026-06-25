@@ -242,6 +242,11 @@ def _node_to_latex(node: bs4.PageElement) -> str:
             if not inner:
                 return ""
             return r"\begin{itemize}" + "\n" + inner + "\n" + r"\end{itemize}"
+        elif name == "ol":
+            inner = "".join(_node_to_latex(c) for c in node.children).strip()
+            if not inner:
+                return ""
+            return r"\begin{enumerate}" + "\n" + inner + "\n" + r"\end{enumerate}"
         elif name == "li":
             inner = "".join(_node_to_latex(c) for c in node.children).strip()
             return r"\item " + inner + "\n"
@@ -290,15 +295,19 @@ def render_latex(profile: Profile) -> str:
     
     # Experience bullets
     rich_fields["experience_bullets"] = []
+    rich_fields["experience_list_type"] = []
     for exp in data.get("experience", []):
         rich_fields["experience_bullets"].append(exp.pop("bullets", []))
+        rich_fields["experience_list_type"].append(exp.pop("list_type", "bullet"))
 
     # Project description & bullets
     rich_fields["projects_desc"] = []
     rich_fields["projects_bullets"] = []
+    rich_fields["projects_list_type"] = []
     for proj in data.get("projects", []):
         rich_fields["projects_desc"].append(proj.pop("description", ""))
         rich_fields["projects_bullets"].append(proj.pop("bullets", []))
+        rich_fields["projects_list_type"].append(proj.pop("list_type", "bullet"))
 
     # Achievement titles (these serve as the achievement descriptions)
     rich_fields["achievements_title"] = []
@@ -317,12 +326,16 @@ def render_latex(profile: Profile) -> str:
     # Experience
     for i, exp in enumerate(escaped_data.get("experience", [])):
         bullets = rich_fields["experience_bullets"][i]
+        list_type = rich_fields["experience_list_type"][i]
+        exp["bullets_type"] = "enumerate" if list_type == "numbered" else "itemize"
         exp["bullets"] = [html_to_latex(b) for b in bullets]
 
     # Projects
     for i, proj in enumerate(escaped_data.get("projects", [])):
         desc = rich_fields["projects_desc"][i]
         bullets = rich_fields["projects_bullets"][i]
+        list_type = rich_fields["projects_list_type"][i]
+        proj["bullets_type"] = "enumerate" if list_type == "numbered" else "itemize"
         proj["description"] = html_to_latex(desc)
         proj["bullets"] = [html_to_latex(b) for b in bullets]
 
