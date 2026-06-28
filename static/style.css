@@ -502,6 +502,45 @@ body:not(.no-transition) .theme-toggle {
     transform: none;
 }
 
+/* Accent button used for AI resume tailoring */
+.btn-accent {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    background: var(--success);
+    color: var(--text-on-accent);
+    border: 1px solid var(--success);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1.25rem;
+    font-family: 'Sora', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color var(--transition-fast) ease,
+                color var(--transition-fast) ease,
+                border-color var(--transition-fast) ease,
+                transform var(--transition-fast) ease,
+                box-shadow var(--transition-fast) ease;
+}
+
+.btn-accent:hover {
+    background: transparent;
+    color: var(--success);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-elevated);
+}
+
+.btn-accent:active {
+    transform: translateY(0);
+}
+
+.btn-accent:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Icon inside buttons */
 .btn-icon {
     width: 16px;
@@ -1100,3 +1139,31 @@ body:not(.no-transition) .theme-toggle {
     margin-bottom: 0;
 }
 
+
+
+/* AI Tailored Resume */
+.ai-section-description {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-lg);
+}
+
+.job-description-input {
+    min-height: 180px;
+}
+
+.ai-section-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--space-md);
+}
+
+@media (max-width: 640px) {
+    .ai-section-actions {
+        justify-content: stretch;
+    }
+
+    .ai-section-actions .btn-accent {
+        width: 100%;
+    }
+}

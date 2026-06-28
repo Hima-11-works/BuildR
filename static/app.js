@@ -223,6 +223,11 @@ const errorSummary    = document.getElementById("error-summary");
 const errorList       = document.getElementById("error-list");
 const toastContainer  = document.getElementById("toast-container");
 
+// AI tailoring
+const tailorBtn       = document.getElementById("tailor-btn");
+const tailorBtnText   = document.getElementById("tailor-btn-text");
+const jobDescInput    = document.getElementById("job-description");
+
 // List containers
 const educationList     = document.getElementById("education-list");
 const experienceList    = document.getElementById("experience-list");
@@ -961,6 +966,76 @@ async function generateResume() {
 
 
 // ═══════════════════════════════════════════════════════════════
+// 4c. GENERATE TAILORED RESUME — POST to /api/resume/tailored
+// ═══════════════════════════════════════════════════════════════
+//
+// HOW THIS DIFFERS FROM generateResume():
+//   • It sends the job description in the POST body.
+//   • The server calls Gemini to tailor the resume, then renders
+//     the AI's JSON output through the same LaTeX → PDF pipeline.
+//   • The download filename is "tailored_resume.pdf".
+//
+// The blob download pattern is identical to the master resume.
+// ═══════════════════════════════════════════════════════════════
+
+async function generateTailoredResume() {
+    // ── Validate: job description must not be empty ─────────
+    const jobDescription = jobDescInput.value.trim();
+    if (!jobDescription) {
+        showToast("Please paste a job description first.", "error");
+        jobDescInput.focus();
+        return;
+    }
+
+    // ── Show loading state ───────────────────────────────────
+    tailorBtn.disabled = true;
+    tailorBtnText.textContent = "Tailoring…";
+
+    try {
+        const response = await fetch("/api/resume/tailored", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_description: jobDescription }),
+        });
+
+        // ── Check if we got a PDF back ───────────────────────
+        const contentType = response.headers.get("content-type") || "";
+
+        if (response.ok && contentType.includes("application/pdf")) {
+            // ── Success: download the PDF blob ───────────────
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "tailored_resume.pdf";
+            document.body.appendChild(link);
+            link.click();
+
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showToast("Tailored resume generated and downloaded!", "success");
+        } else {
+            // ── Error: parse the JSON error message ──────────
+            const result = await response.json();
+            const errorMsg = result.error || "Failed to generate tailored resume.";
+            showToast(errorMsg, "error");
+
+            if (result.log) {
+                console.error("Tectonic compilation log:\n", result.log);
+            }
+        }
+    } catch (err) {
+        showToast(`Network error: ${err.message}`, "error");
+    } finally {
+        tailorBtn.disabled = false;
+        tailorBtnText.textContent = "Generate Tailored Resume";
+        refreshIcons();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 5. VALIDATION ERROR DISPLAY
 // ═══════════════════════════════════════════════════════════════
 //
@@ -1155,6 +1230,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Save button ──────────────────────────────────────────
     saveBtn.addEventListener("click", saveProfile);
     generateBtn.addEventListener("click", generateResume);
+    tailorBtn.addEventListener("click", generateTailoredResume);
 
     // ── "Add" buttons ────────────────────────────────────────
     document.getElementById("add-link-btn").addEventListener("click", () => addLinkRow());

@@ -45,6 +45,8 @@ from services.pdf_service import compile_pdf, PdfCompilationError
 # secrets out of source code.
 load_dotenv()
 
+from services.ai_service import tailor_resume
+
 # ── Step 2: Create the Flask application instance ────────────
 # Flask(__name__) uses the location of THIS module to determine:
 #   • templates/  → folder for Jinja2 HTML templates
@@ -263,6 +265,109 @@ def api_generate_master_resume():
         print(f"{'='*60}\n")
         return jsonify({
             "error": f"Failed to generate resume: {str(e)}"
+        }), 500
+
+
+# ── Tailored Resume Generation API (AI-powered) ─────────────
+# This route is the AI-powered counterpart of /api/resume/master.
+# Instead of rendering the full profile as-is, it:
+#   1. Loads the saved profile from disk.
+#   2. Sends it + a job description to Gemini via ai_service.
+#   3. Gemini returns structured JSON (not LaTeX!) describing
+#      which items to include and how to rewrite them.
+#   4. Converts that JSON to a Profile and renders it through
+#      the same LaTeX → PDF pipeline.
+#
+# THE "AI DECIDES, CODE RENDERS" PATTERN
+# ──────────────────────────────────────
+# The AI never sees or produces LaTeX.  It only decides WHAT
+# content to include and HOW to phrase it.  Our code handles
+# all rendering — escaping, templating, compilation.
+#
+# This is more reliable than asking the AI to produce LaTeX
+# because:
+#   • Constrained decoding guarantees valid JSON output.
+#   • Any LaTeX typo (unmatched brace, missing \) would crash
+#     the compiler.  JSON can't have such issues.
+#   • We can validate the AI's output with Pydantic before
+#     even touching LaTeX.
+#   • The template can change without rewriting the AI prompt.
+# ──────────────────────────────────────────────────────────────
+
+@app.route("/api/resume/tailored", methods=["POST"])
+def api_generate_tailored_resume():
+    """
+    Generate a tailored resume as a PDF, optimized for a specific job.
+
+    EXPECTS
+    -------
+    JSON body: { "job_description": "<pasted job posting text>" }
+
+    PIPELINE
+    --------
+    1. Parse the job description from the request body.
+    2. Load the saved profile from disk.
+    3. Send both to Gemini → get back a TailoredProfile (JSON).
+    4. Convert TailoredProfile → Profile (for rendering).
+    5. Render LaTeX → compile PDF → return as download.
+    """
+    # ── Step 1: Parse the job description ─────────────────────
+    data = request.get_json()
+    if not data or not data.get("job_description", "").strip():
+        return jsonify({
+            "error": "Please paste a job description."
+        }), 400
+
+    job_description = data["job_description"].strip()
+
+    try:
+        # ── Step 2: Load the profile ──────────────────────────
+        profile = load_profile()
+
+        # ── Guard: don't tailor an empty profile ──────────────
+        if not profile.personal_info.name.strip():
+            return jsonify({
+                "error": "Your profile has no name. "
+                         "Please fill in your profile before tailoring."
+            }), 400
+
+        # ── Step 3: Call Gemini for tailoring ─────────────────
+        tailored = tailor_resume(profile, job_description)
+
+        # ── Step 4: Convert to Profile for rendering ─────────
+        tailored_profile = tailored.to_profile()
+
+        # ── Step 5: Render LaTeX → PDF ────────────────────────
+        tex_string = render_latex(tailored_profile)
+        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
+
+        # ── Step 6: Return the PDF ────────────────────────────
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="tailored_resume.pdf",
+        )
+
+    except PdfCompilationError as e:
+        print(f"\n{'='*60}")
+        print(f"PDF COMPILATION ERROR (tailored): {e}")
+        if e.log:
+            print(f"Tectonic log:\n{e.log}")
+        print(f"{'='*60}\n")
+        return jsonify({
+            "error": str(e),
+            "log": e.log,
+        }), 500
+
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"TAILORED RESUME ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        return jsonify({
+            "error": f"Failed to generate tailored resume: {str(e)}"
         }), 500
 
 

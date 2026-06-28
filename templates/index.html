@@ -164,6 +164,35 @@
         </div>
     </section>
 
+    <!-- ═══════════════════════════════════════════════════════
+         AI TAILORED RESUME
+         ═══════════════════════════════════════════════════════ -->
+    <section class="section-card ai-section" id="section-tailored">
+        <div class="section-header">
+            <h2><i data-lucide="sparkles" class="section-icon"></i> AI Tailored Resume</h2>
+        </div>
+        <p class="ai-section-description">
+            Paste a job description below and let AI select, reorder, and rephrase your
+            profile content to match. Your real experience &mdash; optimized for every application.
+        </p>
+        <div class="form-group full-width">
+            <label for="job-description">Job Description</label>
+            <textarea
+                id="job-description"
+                class="job-description-input"
+                rows="8"
+                placeholder="Paste the full job posting here&#10;&#10;e.g. &quot;We are looking for a Software Engineer with experience in Python, React, and cloud infrastructure…&quot;"
+            ></textarea>
+            <span class="field-error"></span>
+        </div>
+        <div class="ai-section-actions">
+            <button type="button" id="tailor-btn" class="btn-accent">
+                <i data-lucide="sparkles" class="btn-icon"></i>
+                <span id="tailor-btn-text">Generate Tailored Resume</span>
+            </button>
+        </div>
+    </section>
+
 </div><!-- /.app-container -->
 
 <!-- ── Fixed Save Bar ──────────────────────────────────────── -->
