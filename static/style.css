@@ -1167,3 +1167,170 @@ body:not(.no-transition) .theme-toggle {
         width: 100%;
     }
 }
+
+
+/* ── Resume Library ────────────────────────────────────────── */
+
+.library-empty {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: var(--space-xl) var(--space-md);
+    font-style: italic;
+}
+
+.library-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.library-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    background: var(--bg-base);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+    transition: border-color var(--transition-fast),
+                box-shadow var(--transition-fast),
+                transform var(--transition-fast);
+    animation: slideIn var(--transition-slow) ease-out;
+}
+
+.library-item:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-card);
+    transform: translateY(-1px);
+}
+
+.library-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.library-item-label {
+    font-family: 'Sora', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.library-item-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.library-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-full);
+    font-family: 'Sora', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.library-badge-master {
+    background: var(--accent-solid);
+    color: var(--text-on-accent);
+}
+
+.library-badge-tailored {
+    background: var(--success);
+    color: var(--text-on-accent);
+}
+
+.library-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.btn-icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: 0;
+}
+
+.btn-icon-action i {
+    width: 15px;
+    height: 15px;
+    stroke-width: 2.2px;
+}
+
+.btn-icon-action:hover {
+    background: var(--bg-surface);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+}
+
+.btn-icon-action.btn-delete:hover {
+    color: var(--danger);
+    background: var(--error-bg);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Slide-out animation for deleted items */
+@keyframes libraryItemOut {
+    0% {
+        opacity: 1;
+        transform: translateX(0);
+        max-height: 100px;
+    }
+    60% {
+        opacity: 0;
+        transform: translateX(30px);
+        max-height: 100px;
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(30px);
+        max-height: 0;
+        padding: 0;
+        margin: 0;
+        border: none;
+    }
+}
+
+.library-item.removing {
+    animation: libraryItemOut 400ms ease-in forwards;
+    pointer-events: none;
+}
+
+/* Responsive: stack on mobile */
+@media (max-width: 640px) {
+    .library-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-sm);
+    }
+
+    .library-item-actions {
+        align-self: flex-end;
+    }
+}

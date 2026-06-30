@@ -235,6 +235,10 @@ const projectList       = document.getElementById("project-list");
 const certificationList = document.getElementById("certification-list");
 const skillsList        = document.getElementById("skills-list");
 
+// Resume library
+const libraryList       = document.getElementById("resume-library-list");
+const libraryEmptyState = document.getElementById("library-empty-state");
+
 
 // ── Icons Helper ────────────────────────────────────────────
 function refreshIcons() {
@@ -924,33 +928,25 @@ async function generateResume() {
             method: "POST",
         });
 
-        // ── Check if we got a PDF back ───────────────────────
-        const contentType = response.headers.get("content-type") || "";
+        const result = await response.json();
 
-        if (response.ok && contentType.includes("application/pdf")) {
-            // ── Success: download the PDF blob ───────────────
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
+        if (response.ok && result.status === "ok") {
+            // ── Success: resume is saved in the library ──────
+            showToast("Master resume generated and saved!", "success");
 
-            // Create a temporary link and click it
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = "master_resume.pdf";
-            document.body.appendChild(link);
-            link.click();
+            // Refresh the library list so the new resume appears
+            loadLibrary();
 
-            // Clean up
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            showToast("Resume generated and downloaded!", "success");
+            // Auto-download the PDF via the new library route
+            downloadFile(
+                `/api/resumes/${encodeURIComponent(result.id)}/pdf`,
+                `${result.id}.pdf`
+            );
         } else {
-            // ── Error: parse the JSON error message ──────────
-            const result = await response.json();
+            // ── Error: show the error message ─────────────────
             const errorMsg = result.error || "Failed to generate resume.";
             showToast(errorMsg, "error");
 
-            // If there's a compilation log, log it for debugging
             if (result.log) {
                 console.error("Tectonic compilation log:\n", result.log);
             }
@@ -998,27 +994,22 @@ async function generateTailoredResume() {
             body: JSON.stringify({ job_description: jobDescription }),
         });
 
-        // ── Check if we got a PDF back ───────────────────────
-        const contentType = response.headers.get("content-type") || "";
+        const result = await response.json();
 
-        if (response.ok && contentType.includes("application/pdf")) {
-            // ── Success: download the PDF blob ───────────────
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
+        if (response.ok && result.status === "ok") {
+            // ── Success: resume is saved in the library ──────
+            showToast("Tailored resume generated and saved!", "success");
 
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = "tailored_resume.pdf";
-            document.body.appendChild(link);
-            link.click();
+            // Refresh the library list so the new resume appears
+            loadLibrary();
 
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            showToast("Tailored resume generated and downloaded!", "success");
+            // Auto-download the PDF via the new library route
+            downloadFile(
+                `/api/resumes/${encodeURIComponent(result.id)}/pdf`,
+                `${result.id}.pdf`
+            );
         } else {
-            // ── Error: parse the JSON error message ──────────
-            const result = await response.json();
+            // ── Error: show the error message ─────────────────
             const errorMsg = result.error || "Failed to generate tailored resume.";
             showToast(errorMsg, "error");
 
@@ -1034,6 +1025,169 @@ async function generateTailoredResume() {
         refreshIcons();
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 4d. RESUME LIBRARY — browse, download, and delete saved resumes
+// ═══════════════════════════════════════════════════════════════
+//
+// The library fetches GET /api/resumes on load and after each
+// generate/delete operation.  Each resume shows its label, type
+// badge, date, and action buttons (download PDF, download .tex,
+// delete).
+// ═══════════════════════════════════════════════════════════════
+
+async function loadLibrary() {
+    try {
+        const response = await fetch("/api/resumes");
+        const resumes = await response.json();
+
+        // Handle error response
+        if (resumes.error) {
+            console.error("Failed to load library:", resumes.error);
+            return;
+        }
+
+        // Clear current list
+        libraryList.innerHTML = "";
+
+        if (resumes.length === 0) {
+            libraryEmptyState.style.display = "block";
+            return;
+        }
+
+        libraryEmptyState.style.display = "none";
+
+        resumes.forEach(resume => {
+            libraryList.appendChild(renderLibraryItem(resume));
+        });
+
+        refreshIcons();
+    } catch (err) {
+        console.error("Failed to load resume library:", err);
+    }
+}
+
+function renderLibraryItem(resume) {
+    const item = document.createElement("div");
+    item.className = "library-item";
+    item.dataset.resumeId = resume.id;
+
+    // Format the date nicely
+    const dateStr = resume.date
+        ? new Date(resume.date).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "Unknown date";
+
+    // Badge class based on type
+    const badgeClass = resume.type === "master"
+        ? "library-badge library-badge-master"
+        : "library-badge library-badge-tailored";
+    const badgeText = resume.type === "master" ? "Master" : "Tailored";
+
+    item.innerHTML = `
+        <div class="library-item-info">
+            <span class="library-item-label">${escapeHtml(resume.label)}</span>
+            <div class="library-item-meta">
+                <span class="${badgeClass}">${badgeText}</span>
+                <span>${escapeHtml(dateStr)}</span>
+            </div>
+        </div>
+        <div class="library-item-actions">
+            ${resume.has_pdf ? `
+                <button type="button" class="btn-icon-action btn-download-pdf" title="Download PDF">
+                    <i data-lucide="file-text"></i>
+                </button>
+            ` : ""}
+            ${resume.has_tex ? `
+                <button type="button" class="btn-icon-action btn-download-tex" title="Download .tex">
+                    <i data-lucide="file-code"></i>
+                </button>
+            ` : ""}
+            <button type="button" class="btn-icon-action btn-delete" title="Delete resume">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+    `;
+
+    // ── Wire up action buttons ───────────────────────────────
+    const pdfBtn = item.querySelector(".btn-download-pdf");
+    if (pdfBtn) {
+        pdfBtn.addEventListener("click", () => {
+            downloadFile(
+                `/api/resumes/${encodeURIComponent(resume.id)}/pdf`,
+                `${resume.id}.pdf`
+            );
+        });
+    }
+
+    const texBtn = item.querySelector(".btn-download-tex");
+    if (texBtn) {
+        texBtn.addEventListener("click", () => {
+            downloadFile(
+                `/api/resumes/${encodeURIComponent(resume.id)}/tex`,
+                `${resume.id}.tex`
+            );
+        });
+    }
+
+    const deleteBtn = item.querySelector(".btn-delete");
+    deleteBtn.addEventListener("click", () => {
+        deleteResumeFromLibrary(resume.id, item);
+    });
+
+    return item;
+}
+
+async function deleteResumeFromLibrary(resumeId, itemElement) {
+    // ── Confirm before deleting ──────────────────────────────
+    if (!confirm("Delete this resume? This cannot be undone.")) {
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `/api/resumes/${encodeURIComponent(resumeId)}`,
+            { method: "DELETE" }
+        );
+
+        const result = await response.json();
+
+        if (response.ok && result.status === "ok") {
+            // ── Animate removal ──────────────────────────────
+            itemElement.classList.add("removing");
+            setTimeout(() => {
+                itemElement.remove();
+                // Show empty state if no items left
+                if (libraryList.children.length === 0) {
+                    libraryEmptyState.style.display = "block";
+                }
+            }, 400);
+
+            showToast("Resume deleted.", "success");
+        } else {
+            showToast(result.error || "Failed to delete resume.", "error");
+        }
+    } catch (err) {
+        showToast(`Network error: ${err.message}`, "error");
+    }
+}
+
+function downloadFile(url, filename) {
+    // Trigger a file download by creating a temporary link.
+    // This works for same-origin URLs served by our Flask backend.
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 // 5. VALIDATION ERROR DISPLAY
@@ -1231,6 +1385,10 @@ document.addEventListener("DOMContentLoaded", () => {
     saveBtn.addEventListener("click", saveProfile);
     generateBtn.addEventListener("click", generateResume);
     tailorBtn.addEventListener("click", generateTailoredResume);
+
+    // ── Resume library ───────────────────────────────────────
+    loadLibrary();
+    document.getElementById("refresh-library-btn").addEventListener("click", loadLibrary);
 
     // ── "Add" buttons ────────────────────────────────────────
     document.getElementById("add-link-btn").addEventListener("click", () => addLinkRow());

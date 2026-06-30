@@ -38,6 +38,9 @@ from models.profile import Profile
 from services.storage_service import load_profile, save_profile
 from services.latex_service import render_latex
 from services.pdf_service import compile_pdf, PdfCompilationError
+from services.resume_library import (
+    save_resume, list_resumes, get_resume_path, delete_resume,
+)
 
 # ── Step 1: Load environment variables from .env ─────────────
 # load_dotenv() reads the .env file in the project root and
@@ -234,16 +237,25 @@ def api_generate_master_resume():
         # ── Step 3: Compile to PDF ────────────────────────────
         pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
 
-        # ── Step 4: Return the PDF ────────────────────────────
-        # send_file() streams the file to the browser.
-        # as_attachment=True sets Content-Disposition: attachment,
-        # which triggers a download instead of inline display.
-        return send_file(
-            pdf_path,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name="master_resume.pdf",
+        # ── Step 4: Persist to the resume library ─────────────
+        # save_resume() creates a timestamped subfolder with the
+        # .tex, .pdf, and metadata.json — making this resume
+        # browsable and downloadable later.
+        resume_id = save_resume(
+            tex_string=tex_string,
+            pdf_path=pdf_path,
+            resume_type="master",
+            label="Master",
         )
+
+        # ── Step 5: Return JSON with the resume ID ────────────
+        # The frontend uses this ID to download via
+        # /api/resumes/<id>/pdf rather than receiving a blob.
+        return jsonify({
+            "status": "ok",
+            "id": resume_id,
+            "label": "Master",
+        })
 
     except PdfCompilationError as e:
         # Tectonic-specific errors (not installed, compile failure)
@@ -341,13 +353,28 @@ def api_generate_tailored_resume():
         tex_string = render_latex(tailored_profile)
         pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
 
-        # ── Step 6: Return the PDF ────────────────────────────
-        return send_file(
-            pdf_path,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name="tailored_resume.pdf",
+        # ── Step 6: Persist to the resume library ─────────────
+        # Extract a meaningful label from the job description.
+        # Use the first ~60 chars as a rough label; the full
+        # description is preserved in metadata.json.
+        label = job_description[:60].strip()
+        if len(job_description) > 60:
+            label += "…"
+
+        resume_id = save_resume(
+            tex_string=tex_string,
+            pdf_path=pdf_path,
+            resume_type="tailored",
+            label=label,
+            job_description=job_description,
         )
+
+        # ── Step 7: Return JSON with the resume ID ────────────
+        return jsonify({
+            "status": "ok",
+            "id": resume_id,
+            "label": label,
+        })
 
     except PdfCompilationError as e:
         print(f"\n{'='*60}")
@@ -369,6 +396,107 @@ def api_generate_tailored_resume():
         return jsonify({
             "error": f"Failed to generate tailored resume: {str(e)}"
         }), 500
+
+
+# ── Resume Library API ───────────────────────────────────────
+# These routes let the frontend browse, download, and delete
+# previously generated resumes.  Each resume is stored in its
+# own folder under storage/resumes/ with .tex, .pdf, and
+# metadata.json.
+# ──────────────────────────────────────────────────────────────
+
+@app.route("/api/resumes", methods=["GET"])
+def api_list_resumes():
+    """
+    List all saved resumes with their metadata.
+
+    Returns a JSON array sorted newest-first, e.g.:
+    [
+        {
+            "id": "20260701-005402_master",
+            "type": "master",
+            "label": "Master",
+            "date": "2026-07-01T00:54:02",
+            "has_pdf": true,
+            "has_tex": true
+        },
+        ...
+    ]
+    """
+    try:
+        resumes = list_resumes()
+        return jsonify(resumes)
+    except Exception as e:
+        return jsonify({"error": f"Failed to list resumes: {str(e)}"}), 500
+
+
+@app.route("/api/resumes/<resume_id>/pdf", methods=["GET"])
+def api_download_resume_pdf(resume_id):
+    """
+    Download the PDF for a specific saved resume.
+
+    The resume_id is the folder name (e.g. "20260701-005402_master").
+    Path traversal is blocked by resume_library.get_resume_path().
+    """
+    try:
+        pdf_path = get_resume_path(resume_id, "pdf")
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{resume_id}.pdf",
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to download PDF: {str(e)}"}), 500
+
+
+@app.route("/api/resumes/<resume_id>/tex", methods=["GET"])
+def api_download_resume_tex(resume_id):
+    """
+    Download the editable .tex source for a specific saved resume.
+
+    Same safety checks as the PDF route.
+    """
+    try:
+        tex_path = get_resume_path(resume_id, "tex")
+        return send_file(
+            tex_path,
+            mimetype="application/x-tex",
+            as_attachment=True,
+            download_name=f"{resume_id}.tex",
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to download .tex: {str(e)}"}), 500
+
+
+@app.route("/api/resumes/<resume_id>", methods=["DELETE"])
+def api_delete_resume(resume_id):
+    """
+    Delete a saved resume and its entire folder.
+
+    SECURITY
+    --------
+    delete_resume() uses resolve-and-verify to ensure the
+    target path is inside storage/resumes/.  Path traversal
+    attempts (e.g. "../../etc") are rejected with a 400.
+    """
+    try:
+        delete_resume(resume_id)
+        return jsonify({"status": "ok"})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete resume: {str(e)}"}), 500
 
 
 # ── Step 4: Run the dev server ───────────────────────────────
