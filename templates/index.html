@@ -175,6 +175,32 @@
             Paste a job description below and let AI select, reorder, and rephrase your
             profile content to match. Your real experience &mdash; optimized for every application.
         </p>
+
+        <!-- URL Input -->
+        <div class="form-group full-width">
+            <label for="job-url">
+                <i data-lucide="link" class="label-icon"></i> Job Posting URL
+            </label>
+            <input
+                type="url"
+                id="job-url"
+                class="job-url-input"
+                placeholder="https://careers.example.com/software-engineer-12345"
+            >
+            <span class="scraping-hint">
+                <i data-lucide="info" class="hint-icon"></i>
+                Scraping may not work on all sites &mdash; LinkedIn, Indeed, and others block automated access.
+            </span>
+        </div>
+
+        <!-- OR Divider -->
+        <div class="input-or-divider">
+            <span class="or-line"></span>
+            <span class="or-text">OR</span>
+            <span class="or-line"></span>
+        </div>
+
+        <!-- Job Description Textarea (always available as fallback) -->
         <div class="form-group full-width">
             <label for="job-description">Job Description</label>
             <textarea

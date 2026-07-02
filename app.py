@@ -49,6 +49,7 @@ from services.resume_library import (
 load_dotenv()
 
 from services.ai_service import tailor_resume
+from services.scraper_service import fetch_job_description, ScrapingError
 
 # ── Step 2: Create the Flask application instance ────────────
 # Flask(__name__) uses the location of THIS module to determine:
@@ -313,24 +314,47 @@ def api_generate_tailored_resume():
 
     EXPECTS
     -------
-    JSON body: { "job_description": "<pasted job posting text>" }
+    JSON body — at least one of:
+        { "job_description": "<pasted job posting text>" }
+        { "job_url": "https://careers.example.com/posting/12345" }
+
+    If both are provided, job_description (pasted text) takes priority
+    because it's the reliable path — the user already has the text.
+
+    If only job_url is given, we attempt to scrape the page.  Scraping
+    is best-effort: many sites block bots, require JavaScript, or hide
+    content behind login walls.  On failure, we return a clear message
+    telling the user to paste the text manually.
 
     PIPELINE
     --------
-    1. Parse the job description from the request body.
+    1. Parse the job description from the request body (text or URL).
     2. Load the saved profile from disk.
     3. Send both to Gemini → get back a TailoredProfile (JSON).
     4. Convert TailoredProfile → Profile (for rendering).
     5. Render LaTeX → compile PDF → return as download.
     """
-    # ── Step 1: Parse the job description ─────────────────────
+    # ── Step 1: Get the job description (text or URL) ─────────
     data = request.get_json()
-    if not data or not data.get("job_description", "").strip():
-        return jsonify({
-            "error": "Please paste a job description."
-        }), 400
+    if not data:
+        return jsonify({"error": "Request body must be JSON."}), 400
 
-    job_description = data["job_description"].strip()
+    job_description = (data.get("job_description") or "").strip()
+    job_url = (data.get("job_url") or "").strip()
+
+    # Text takes priority — it's the reliable path
+    if not job_description:
+        if job_url:
+            # Attempt to scrape the URL.  ScrapingError carries
+            # a user-friendly message that we can return directly.
+            try:
+                job_description = fetch_job_description(job_url)
+            except ScrapingError as e:
+                return jsonify({"error": str(e)}), 400
+        else:
+            return jsonify({
+                "error": "Please paste a job description or provide a URL."
+            }), 400
 
     try:
         # ── Step 2: Load the profile ──────────────────────────

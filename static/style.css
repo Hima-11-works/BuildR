@@ -1152,6 +1152,65 @@ body:not(.no-transition) .theme-toggle {
     min-height: 180px;
 }
 
+/* Job URL input */
+.job-url-input {
+    font-size: 0.9rem;
+}
+
+/* Label icon (inline with label text) */
+.label-icon {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.2px;
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 2px;
+    color: var(--text-secondary);
+}
+
+/* Scraping info hint below URL input */
+.scraping-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+    line-height: 1.4;
+}
+
+.hint-icon {
+    width: 13px;
+    height: 13px;
+    stroke-width: 2.2px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--warning);
+}
+
+/* OR Divider between URL and textarea */
+.input-or-divider {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin: var(--space-lg) 0;
+}
+
+.or-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+}
+
+.or-text {
+    font-family: 'Sora', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
 .ai-section-actions {
     display: flex;
     justify-content: flex-end;

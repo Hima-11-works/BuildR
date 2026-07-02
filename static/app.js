@@ -227,6 +227,7 @@ const toastContainer  = document.getElementById("toast-container");
 const tailorBtn       = document.getElementById("tailor-btn");
 const tailorBtnText   = document.getElementById("tailor-btn-text");
 const jobDescInput    = document.getElementById("job-description");
+const jobUrlInput     = document.getElementById("job-url");
 
 // List containers
 const educationList     = document.getElementById("education-list");
@@ -975,23 +976,36 @@ async function generateResume() {
 // ═══════════════════════════════════════════════════════════════
 
 async function generateTailoredResume() {
-    // ── Validate: job description must not be empty ─────────
+    // ── Validate: need either pasted text OR a URL ───────────
     const jobDescription = jobDescInput.value.trim();
-    if (!jobDescription) {
-        showToast("Please paste a job description first.", "error");
+    const jobUrl = jobUrlInput.value.trim();
+
+    if (!jobDescription && !jobUrl) {
+        showToast("Please paste a job description or enter a URL.", "error");
         jobDescInput.focus();
         return;
     }
 
+    // ── Build the request body ────────────────────────────────
+    // Text takes priority — it's the reliable path.  If the user
+    // filled in both, the pasted text wins (the backend also
+    // enforces this, but we avoid sending a URL when unnecessary).
+    const body = {};
+    if (jobDescription) {
+        body.job_description = jobDescription;
+    } else {
+        body.job_url = jobUrl;
+    }
+
     // ── Show loading state ───────────────────────────────────
     tailorBtn.disabled = true;
-    tailorBtnText.textContent = "Tailoring…";
+    tailorBtnText.textContent = jobDescription ? "Tailoring…" : "Fetching & Tailoring…";
 
     try {
         const response = await fetch("/api/resume/tailored", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ job_description: jobDescription }),
+            body: JSON.stringify(body),
         });
 
         const result = await response.json();
@@ -1012,6 +1026,12 @@ async function generateTailoredResume() {
             // ── Error: show the error message ─────────────────
             const errorMsg = result.error || "Failed to generate tailored resume.";
             showToast(errorMsg, "error");
+
+            // If it was a scraping error and the textarea is empty,
+            // nudge the user toward the manual fallback
+            if (!jobDescription && jobUrl) {
+                jobDescInput.focus();
+            }
 
             if (result.log) {
                 console.error("Tectonic compilation log:\n", result.log);
