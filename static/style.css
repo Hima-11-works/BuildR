@@ -122,6 +122,7 @@ body:not(.no-transition),
 body:not(.no-transition) .section-card,
 body:not(.no-transition) input,
 body:not(.no-transition) textarea,
+body:not(.no-transition) select,
 body:not(.no-transition) button,
 body:not(.no-transition) header,
 body:not(.no-transition) hr,
@@ -297,6 +298,7 @@ body:not(.no-transition) .theme-toggle {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-md);
+    width: 100%;
 }
 
 .form-grid.single-col {
@@ -307,6 +309,7 @@ body:not(.no-transition) .theme-toggle {
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
+    min-width: 0;
 }
 
 .form-group.full-width {
@@ -322,7 +325,8 @@ body:not(.no-transition) .theme-toggle {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
     background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
@@ -331,12 +335,17 @@ body:not(.no-transition) .theme-toggle {
     font-family: inherit;
     font-size: 0.9rem;
     line-height: 1.5;
-    transition: all var(--transition-fast);
+    transition: background-color var(--transition-fast),
+                border-color var(--transition-fast),
+                box-shadow var(--transition-fast);
     outline: none;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
     background: var(--bg-input-focus);
     border-color: var(--accent-solid);
     box-shadow: 0 0 0 3px var(--accent-glow);
@@ -374,7 +383,9 @@ body:not(.no-transition) .theme-toggle {
 .list-container {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     gap: var(--space-md);
+    width: 100%;
 }
 
 .list-item {
@@ -383,7 +394,11 @@ body:not(.no-transition) .theme-toggle {
     border-radius: var(--radius-md);
     padding: var(--space-lg);
     position: relative;
-    transition: all var(--transition-normal);
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    transition: border-color var(--transition-normal),
+                box-shadow var(--transition-normal);
     animation: slideIn var(--transition-slow) ease-out;
 }
 

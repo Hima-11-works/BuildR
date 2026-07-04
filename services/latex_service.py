@@ -50,6 +50,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 import jinja2
@@ -111,6 +112,10 @@ def escape_latex(value: str) -> str:
     >>> escape_latex("C#")
     'C\\#'
     """
+    # Remove ASCII control characters (0-31 except tab \x09, newline \x0a, carriage return \x0d)
+    # and C1 control characters (127-159) to prevent Tectonic compilation errors.
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", value)
+
     for char, replacement in _LATEX_ESCAPE_RULES:
         value = value.replace(char, replacement)
     return value
