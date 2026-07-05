@@ -181,17 +181,7 @@ Navigate to the **Resume Library** tab to review previous downloads. Here you ca
 
 ---
 
-## 🤝 Contributing
 
-We welcome contributions from the community! To contribute:
-1. **Fork** this repository.
-2. Create a branch for your updates: `git checkout -b feature/amazing-feature`.
-3. If changing data structures, update models in [models/profile.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) and ensure validation rules are kept up to date.
-4. Verify your code style and execute local runs.
-5. Commit your work: `git commit -m 'Add amazing feature'`.
-6. Push to your branch and submit a Pull Request.
-
----
 
 ## 📄 License
 
