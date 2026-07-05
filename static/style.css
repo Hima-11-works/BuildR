@@ -1713,8 +1713,69 @@ body.builder-active .save-bar {
 /* ==========================================================================
    DRAG-AND-DROP FILE UPLOAD ZONE
    ========================================================================== */
-.upload-section {
+.upload-section-collapsible {
+    padding: 0 !important;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background-color: var(--bg-card);
     margin-bottom: var(--space-xl);
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.import-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--transition-fast);
+}
+
+.import-header:hover {
+    background-color: var(--bg-surface);
+}
+
+.import-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.import-header-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--text-secondary);
+}
+
+.import-link-text {
+    color: var(--accent-solid);
+}
+
+.chevron-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+    transition: transform var(--transition-normal);
+}
+
+.chevron-icon.open {
+    transform: rotate(180deg);
+}
+
+.import-content {
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--space-lg);
+    background-color: var(--bg-surface);
+    display: none;
+}
+
+.import-content .upload-dropzone {
+    padding: var(--space-xl) var(--space-md);
+    background-color: var(--bg-card);
 }
 
 .upload-dropzone {

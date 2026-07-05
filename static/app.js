@@ -1590,6 +1590,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // ── Collapsible Import Section Toggle ───────────────────
+    const importTrigger = document.getElementById("import-accordion-trigger");
+    const importContent = document.getElementById("import-collapse-content");
+    const importChevron = document.getElementById("import-chevron");
+    if (importTrigger && importContent && importChevron) {
+        importTrigger.addEventListener("click", () => {
+            const isVisible = window.getComputedStyle(importContent).display !== "none";
+            if (isVisible) {
+                importContent.style.display = "none";
+                importChevron.classList.remove("open");
+            } else {
+                importContent.style.display = "block";
+                importChevron.classList.add("open");
+            }
+            refreshIcons();
+        });
+    }
+
     // ── Save button ──────────────────────────────────────────
     saveBtn.addEventListener("click", saveProfile);
     generateBtn.addEventListener("click", generateResume);

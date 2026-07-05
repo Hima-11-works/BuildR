@@ -1,22 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BuildR — Master Resume Builder</title>
-    <meta name="description" content="Create and maintain your Master Resume. Add education, experience, projects, skills, and certifications.">
+    <meta name="description"
+        content="Create and maintain your Master Resume. Add education, experience, projects, skills, and certifications.">
 
     <!-- Google Fonts: Sora & Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
 
     <!-- Lucide Icons Library -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Theme initialization script (pre-render to prevent FOUC) -->
     <script>
-        (function() {
+        (function () {
             const savedTheme = localStorage.getItem('theme');
             const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
@@ -27,315 +31,336 @@
     <!-- Our stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body class="no-transition">
 
-<div class="app-container">
+    <div class="app-container">
 
-    <!-- Theme Toggle Switcher -->
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
-        <i data-lucide="sun" class="theme-icon sun-icon"></i>
-        <i data-lucide="moon" class="theme-icon moon-icon"></i>
-    </button>
-    <!-- ═══════════════════════════════════════════════════════
+        <!-- Theme Toggle Switcher -->
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+            <i data-lucide="sun" class="theme-icon sun-icon"></i>
+            <i data-lucide="moon" class="theme-icon moon-icon"></i>
+        </button>
+        <!-- ═══════════════════════════════════════════════════════
          HOME VIEW
          ═══════════════════════════════════════════════════════ -->
-    <div id="view-home" class="app-view active">
-        <header class="home-hero">
-            <h1 class="logo-title">BuildR</h1>
-            <p class="logo-subtitle">Create ATS-Optimized Resumes Powered by AI</p>
-        </header>
+        <div id="view-home" class="app-view active">
+            <header class="home-hero">
+                <h1 class="logo-title">BuildR</h1>
+                <p class="logo-subtitle">Create ATS-Optimized Resumes Powered by AI</p>
+            </header>
 
-        <div class="home-actions">
-            <a href="#builder" class="home-action-btn primary-action">
-                <i data-lucide="file-text" class="action-icon"></i>
-                <span class="action-title">Create / Edit Master Resume</span>
-                <span class="action-desc">Build your Master Resume with education, experience, and skills.</span>
-            </a>
-            <button type="button" id="btn-home-tailor" class="home-action-btn secondary-action">
-                <i data-lucide="sparkles" class="action-icon"></i>
-                <span class="action-title">Generate AI Tailored Resume</span>
-                <span class="action-desc">Optimize bullet points and sections to match a specific job description.</span>
-            </button>
-        </div>
-
-        <!-- Master Resume Status Section -->
-        <div class="home-section-title">Master Resume Status</div>
-        <div id="master-resume-card" class="status-card status-missing">
-            <div class="status-card-header">
-                <div class="status-indicator">
-                    <i data-lucide="alert-circle" id="status-icon" class="status-icon-missing"></i>
-                    <span id="status-text" class="status-title">No Master Resume Found</span>
-                </div>
-                <div class="status-date" id="status-date-container" style="display: none;">
-                    Last Updated: <span id="status-date-value">N/A</span>
-                </div>
-            </div>
-            <p id="status-desc" class="status-desc">
-                Please create a Master Resume first. Your Master Resume serves as the raw source of truth for the AI to tailor resume variants.
-            </p>
-            <div class="status-card-actions">
-                <a href="#builder" id="status-action-btn" class="btn-primary">Create Master Resume</a>
-            </div>
-        </div>
-
-        <!-- Future Scalability: Tailored Resumes Section Placeholder -->
-        <div class="tailored-resumes-container" id="home-tailored-resumes-section" style="margin-top: var(--space-2xl);">
-            <!-- Future tailored resumes library or list will be appended here -->
-        </div>
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════════
-         BUILDER VIEW (Master Resume Builder)
-         ═══════════════════════════════════════════════════════ -->
-    <div id="view-builder" class="app-view">
-        <div class="view-header">
-            <a href="#home" class="btn-back" id="builder-back-btn">
-                <i data-lucide="arrow-left"></i> Back to Home
-            </a>
-        </div>
-
-        <!-- ── Header ──────────────────────────────────────────── -->
-        <header class="app-header">
-            <h1>BuildR</h1>
-            <p>Your Master Resume — edit everything in one place.</p>
-            <p class="intro-text">
-                Your Master Resume is your source of truth. Build it once, keep it updated, and later tailor it for different jobs using AI.
-            </p>
-        </header>
-
-        <!-- ── Upload Existing Resume ──────────────────────────── -->
-        <section class="section-card upload-section">
-            <div class="upload-dropzone" id="upload-container">
-                <i data-lucide="upload-cloud" class="upload-cloud-icon"></i>
-                <h3>Upload Existing Resume</h3>
-                <p class="upload-desc">
-                    Drag and drop your PDF or DOCX resume here, or click to browse.
-                    Gemini AI will automatically extract your details to populate the form below.
-                </p>
-                <button type="button" class="btn-secondary" id="browse-btn">Browse Files</button>
-                <input type="file" id="resume-file-input" accept=".pdf,.docx" style="display: none;">
-                <span class="upload-hint">Supported formats: PDF, DOCX</span>
-            </div>
-        </section>
-
-        <!-- ── Error Summary Banner ────────────────────────────── -->
-        <div id="error-summary" class="error-summary">
-            <h3><i data-lucide="alert-triangle" class="error-summary-icon"></i> Validation Errors</h3>
-            <ul id="error-list"></ul>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════════════
-             PERSONAL INFO
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-personal-info">
-            <div class="section-header">
-                <h2><i data-lucide="user" class="section-icon"></i> Personal Info</h2>
-            </div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="pi-name">Full Name</label>
-                    <input type="text" id="pi-name" placeholder="e.g. Jane Doe">
-                    <span class="field-error"></span>
-                </div>
-                <div class="form-group">
-                    <label for="pi-email">Email</label>
-                    <input type="email" id="pi-email" placeholder="e.g. jane@example.com">
-                    <span class="field-error"></span>
-                </div>
-                <div class="form-group">
-                    <label for="pi-phone">Phone (optional)</label>
-                    <input type="text" id="pi-phone" placeholder="e.g. +1 555-123-4567">
-                    <span class="field-error"></span>
-                </div>
-            </div>
-
-            <!-- Links (dynamic key-value pairs) -->
-            <div style="margin-top: var(--space-lg);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm);">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;">
-                        Links
-                    </label>
-                    <button type="button" id="add-link-btn" class="btn-add">+ Add Link</button>
-                </div>
-                <div id="links-list"></div>
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             EDUCATION
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-education">
-            <div class="section-header">
-                <h2><i data-lucide="graduation-cap" class="section-icon"></i> Education</h2>
-                <button type="button" id="add-education-btn" class="btn-add">+ Add Education</button>
-            </div>
-            <div id="education-list" class="list-container">
-                <!-- Education items are added dynamically by app.js -->
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             EXPERIENCE
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-experience">
-            <div class="section-header">
-                <h2><i data-lucide="briefcase" class="section-icon"></i> Experience</h2>
-                <button type="button" id="add-experience-btn" class="btn-add">+ Add Experience</button>
-            </div>
-            <div id="experience-list" class="list-container">
-                <!-- Experience items are added dynamically by app.js -->
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             PROJECTS
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-projects">
-            <div class="section-header">
-                <h2><i data-lucide="folder" class="section-icon"></i> Projects</h2>
-                <button type="button" id="add-project-btn" class="btn-add">+ Add Project</button>
-            </div>
-            <div id="project-list" class="list-container">
-                <!-- Project items are added dynamically by app.js -->
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             SKILLS
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-skills">
-            <div class="section-header">
-                <h2><i data-lucide="wrench" class="section-icon"></i> Skills</h2>
-                <button type="button" id="add-skill-category-btn" class="btn-add">+ Add Category</button>
-            </div>
-            <div id="skills-list">
-                <!-- Skill categories are added dynamically by app.js -->
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             CERTIFICATIONS
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-certifications">
-            <div class="section-header">
-                <h2><i data-lucide="badge-check" class="section-icon"></i> Certifications</h2>
-                <button type="button" id="add-certification-btn" class="btn-add">+ Add Certification</button>
-            </div>
-            <div id="certification-list" class="list-container">
-                <!-- Certification items are added dynamically by app.js -->
-            </div>
-        </section>
-
-        <!-- ═══════════════════════════════════════════════════════
-             ACHIEVEMENTS
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-achievements">
-            <div class="section-header">
-                <h2><i data-lucide="trophy" class="section-icon"></i> Achievements</h2>
-            </div>
-            <div class="form-group full-width">
-                <div id="achievements-editor-container"></div>
-                <span class="field-error"></span>
-            </div>
-        </section>
-
-
-        <!-- ═══════════════════════════════════════════════════════
-             RESUME LIBRARY
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card" id="section-resume-library">
-            <div class="section-header">
-                <h2><i data-lucide="library" class="section-icon"></i> Resume Library</h2>
-                <button type="button" id="refresh-library-btn" class="btn-add">
-                    <i data-lucide="refresh-cw"></i> Refresh
+            <div class="home-actions">
+                <a href="#builder" class="home-action-btn primary-action">
+                    <i data-lucide="file-text" class="action-icon"></i>
+                    <span class="action-title">Create / Edit Master Resume</span>
+                    <span class="action-desc">Build your Master Resume with education, experience, and skills.</span>
+                </a>
+                <button type="button" id="btn-home-tailor" class="home-action-btn secondary-action">
+                    <i data-lucide="sparkles" class="action-icon"></i>
+                    <span class="action-title">Generate AI Tailored Resume</span>
+                    <span class="action-desc">Optimize bullet points and sections to match a specific job
+                        description.</span>
                 </button>
             </div>
-            <p id="library-empty-state" class="library-empty" style="display: none;">
-                No resumes yet — generate your first one above!
-            </p>
-            <div id="resume-library-list" class="library-list">
-                <!-- Populated dynamically by app.js -->
-            </div>
-        </section>
-    </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         AI TAILORING SETUP VIEW (COMING SOON)
-         ═══════════════════════════════════════════════════════ -->
-    <div id="view-tailor" class="app-view">
-        <div class="view-header">
-            <a href="#home" class="btn-back">
-                <i data-lucide="arrow-left"></i> Back to Home
-            </a>
-        </div>
-        <div class="coming-soon-card">
-            <div class="placeholder-icon-wrapper">
-                <i data-lucide="sparkles" class="placeholder-icon"></i>
-            </div>
-            <h2>AI Tailoring Setup</h2>
-            <div class="coming-soon-badge">Coming Soon</div>
-            <p class="placeholder-desc">
-                Tailor your master resume to match specific job roles. Our AI alignment helper will select, rephrase, and prioritize your experience bullets to best match the job description.
-            </p>
-        </div>
-    </div>
-
-</div><!-- /.app-container -->
-
-<!-- ── Fixed Save Bar ──────────────────────────────────────── -->
-<div class="save-bar">
-    <button type="button" id="save-btn" class="btn-primary">
-        <i data-lucide="save" class="btn-icon"></i>
-        <span id="save-btn-text">Save Master Resume</span>
-    </button>
-    <button type="button" id="generate-btn" class="btn-secondary">
-        <i data-lucide="download" class="btn-icon"></i>
-        <span id="generate-btn-text">Download Master Resume PDF</span>
-    </button>
-</div>
-
-<!-- ── Confirmation Modal ────────────────────────────────────── -->
-<div id="confirmation-modal" class="modal-overlay">
-    <div class="modal-card">
-        <div class="modal-header">
-            <h2>Confirm Master Resume Import</h2>
-            <button type="button" class="modal-close-btn" id="confirm-modal-close"><i data-lucide="x"></i></button>
-        </div>
-        <div class="modal-body">
-            <div class="warning-banner">
-                <i data-lucide="alert-triangle" class="warning-icon"></i>
-                <div class="warning-content">
-                    <strong>Warning:</strong> Importing will replace all fields in the builder. Unsaved changes will be lost.
+            <!-- Master Resume Status Section -->
+            <div class="home-section-title">Master Resume Status</div>
+            <div id="master-resume-card" class="status-card status-missing">
+                <div class="status-card-header">
+                    <div class="status-indicator">
+                        <i data-lucide="alert-circle" id="status-icon" class="status-icon-missing"></i>
+                        <span id="status-text" class="status-title">No Master Resume Found</span>
+                    </div>
+                    <div class="status-date" id="status-date-container" style="display: none;">
+                        Last Updated: <span id="status-date-value">N/A</span>
+                    </div>
+                </div>
+                <p id="status-desc" class="status-desc">
+                    Please create a Master Resume first. Your Master Resume serves as the raw source of truth for the AI
+                    to tailor resume variants.
+                </p>
+                <div class="status-card-actions">
+                    <a href="#builder" id="status-action-btn" class="btn-primary">Create Master Resume</a>
                 </div>
             </div>
-            <div class="extraction-summary">
-                <h3>Extracted Details</h3>
-                <ul id="extraction-summary-list">
-                    <!-- Populated dynamically -->
-                </ul>
+
+            <!-- Future Scalability: Tailored Resumes Section Placeholder -->
+            <div class="tailored-resumes-container" id="home-tailored-resumes-section"
+                style="margin-top: var(--space-2xl);">
+                <!-- Future tailored resumes library or list will be appended here -->
             </div>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn-secondary" id="confirm-modal-cancel">Cancel</button>
-            <button type="button" class="btn-primary" id="confirm-modal-confirm">Confirm & Overwrite</button>
+
+        <!-- ═══════════════════════════════════════════════════════
+         BUILDER VIEW (Master Resume Builder)
+         ═══════════════════════════════════════════════════════ -->
+        <div id="view-builder" class="app-view">
+            <div class="view-header">
+                <a href="#home" class="btn-back" id="builder-back-btn">
+                    <i data-lucide="arrow-left"></i> Back to Home
+                </a>
+            </div>
+
+            <!-- ── Header ──────────────────────────────────────────── -->
+            <header class="app-header">
+                <h1>BuildR</h1>
+                <p>Your Master Resume — edit everything in one place.</p>
+                <p class="intro-text">
+                    Your Master Resume is your source of truth. Build it once, keep it updated, and later tailor it for
+                    different jobs using AI.
+                </p>
+            </header>
+
+            <!-- ── Upload Existing Resume (Collapsible) ────────────── -->
+            <section class="section-card upload-section-collapsible">
+                <div class="import-header" id="import-accordion-trigger">
+                    <div class="import-header-left">
+                        <i data-lucide="file-up" class="import-header-icon"></i>
+                        <span>Already have a resume? <span class="import-link-text">Upload a PDF or DOCX and we'll
+                                automatically
+                                extract your information and fill the form for you.</span></span>
+                    </div>
+                    <i data-lucide="chevron-down" class="chevron-icon" id="import-chevron"></i>
+                </div>
+                <div class="import-content" id="import-collapse-content">
+                    <div class="upload-dropzone" id="upload-container">
+                        <i data-lucide="upload-cloud" class="upload-cloud-icon"></i>
+                        <h3>Upload Existing Resume</h3>
+                        <p class="upload-desc">
+                            Drag and drop your PDF or DOCX resume here, or click to browse.
+                            Gemini AI will automatically extract your details to populate the form below.
+                        </p>
+                        <button type="button" class="btn-secondary" id="browse-btn">Browse Files</button>
+                        <input type="file" id="resume-file-input" accept=".pdf,.docx" style="display: none;">
+                        <span class="upload-hint">Supported formats: PDF, DOCX</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── Error Summary Banner ────────────────────────────── -->
+            <div id="error-summary" class="error-summary">
+                <h3><i data-lucide="alert-triangle" class="error-summary-icon"></i> Validation Errors</h3>
+                <ul id="error-list"></ul>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════
+             PERSONAL INFO
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-personal-info">
+                <div class="section-header">
+                    <h2><i data-lucide="user" class="section-icon"></i> Personal Info</h2>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="pi-name">Full Name</label>
+                        <input type="text" id="pi-name" placeholder="e.g. Jane Doe">
+                        <span class="field-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="pi-email">Email</label>
+                        <input type="email" id="pi-email" placeholder="e.g. jane@example.com">
+                        <span class="field-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="pi-phone">Phone (optional)</label>
+                        <input type="text" id="pi-phone" placeholder="e.g. +1 555-123-4567">
+                        <span class="field-error"></span>
+                    </div>
+                </div>
+
+                <!-- Links (dynamic key-value pairs) -->
+                <div style="margin-top: var(--space-lg);">
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm);">
+                        <label
+                            style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;">
+                            Links
+                        </label>
+                        <button type="button" id="add-link-btn" class="btn-add">+ Add Link</button>
+                    </div>
+                    <div id="links-list"></div>
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             EDUCATION
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-education">
+                <div class="section-header">
+                    <h2><i data-lucide="graduation-cap" class="section-icon"></i> Education</h2>
+                    <button type="button" id="add-education-btn" class="btn-add">+ Add Education</button>
+                </div>
+                <div id="education-list" class="list-container">
+                    <!-- Education items are added dynamically by app.js -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             EXPERIENCE
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-experience">
+                <div class="section-header">
+                    <h2><i data-lucide="briefcase" class="section-icon"></i> Experience</h2>
+                    <button type="button" id="add-experience-btn" class="btn-add">+ Add Experience</button>
+                </div>
+                <div id="experience-list" class="list-container">
+                    <!-- Experience items are added dynamically by app.js -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             PROJECTS
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-projects">
+                <div class="section-header">
+                    <h2><i data-lucide="folder" class="section-icon"></i> Projects</h2>
+                    <button type="button" id="add-project-btn" class="btn-add">+ Add Project</button>
+                </div>
+                <div id="project-list" class="list-container">
+                    <!-- Project items are added dynamically by app.js -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             SKILLS
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-skills">
+                <div class="section-header">
+                    <h2><i data-lucide="wrench" class="section-icon"></i> Skills</h2>
+                    <button type="button" id="add-skill-category-btn" class="btn-add">+ Add Category</button>
+                </div>
+                <div id="skills-list">
+                    <!-- Skill categories are added dynamically by app.js -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             CERTIFICATIONS
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-certifications">
+                <div class="section-header">
+                    <h2><i data-lucide="badge-check" class="section-icon"></i> Certifications</h2>
+                    <button type="button" id="add-certification-btn" class="btn-add">+ Add Certification</button>
+                </div>
+                <div id="certification-list" class="list-container">
+                    <!-- Certification items are added dynamically by app.js -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════
+             ACHIEVEMENTS
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-achievements">
+                <div class="section-header">
+                    <h2><i data-lucide="trophy" class="section-icon"></i> Achievements</h2>
+                </div>
+                <div class="form-group full-width">
+                    <div id="achievements-editor-container"></div>
+                    <span class="field-error"></span>
+                </div>
+            </section>
+
+
+            <!-- ═══════════════════════════════════════════════════════
+             RESUME LIBRARY
+             ═══════════════════════════════════════════════════════ -->
+            <section class="section-card" id="section-resume-library">
+                <div class="section-header">
+                    <h2><i data-lucide="library" class="section-icon"></i> Resume Library</h2>
+                    <button type="button" id="refresh-library-btn" class="btn-add">
+                        <i data-lucide="refresh-cw"></i> Refresh
+                    </button>
+                </div>
+                <p id="library-empty-state" class="library-empty" style="display: none;">
+                    No resumes yet — generate your first one above!
+                </p>
+                <div id="resume-library-list" class="library-list">
+                    <!-- Populated dynamically by app.js -->
+                </div>
+            </section>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════
+         AI TAILORING SETUP VIEW (COMING SOON)
+         ═══════════════════════════════════════════════════════ -->
+        <div id="view-tailor" class="app-view">
+            <div class="view-header">
+                <a href="#home" class="btn-back">
+                    <i data-lucide="arrow-left"></i> Back to Home
+                </a>
+            </div>
+            <div class="coming-soon-card">
+                <div class="placeholder-icon-wrapper">
+                    <i data-lucide="sparkles" class="placeholder-icon"></i>
+                </div>
+                <h2>AI Tailoring Setup</h2>
+                <div class="coming-soon-badge">Coming Soon</div>
+                <p class="placeholder-desc">
+                    Tailor your master resume to match specific job roles. Our AI alignment helper will select,
+                    rephrase, and prioritize your experience bullets to best match the job description.
+                </p>
+            </div>
+        </div>
+
+    </div><!-- /.app-container -->
+
+    <!-- ── Fixed Save Bar ──────────────────────────────────────── -->
+    <div class="save-bar">
+        <button type="button" id="save-btn" class="btn-primary">
+            <i data-lucide="save" class="btn-icon"></i>
+            <span id="save-btn-text">Save Master Resume</span>
+        </button>
+        <button type="button" id="generate-btn" class="btn-secondary">
+            <i data-lucide="download" class="btn-icon"></i>
+            <span id="generate-btn-text">Download Master Resume PDF</span>
+        </button>
+    </div>
+
+    <!-- ── Confirmation Modal ────────────────────────────────────── -->
+    <div id="confirmation-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Confirm Master Resume Import</h2>
+                <button type="button" class="modal-close-btn" id="confirm-modal-close"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="warning-banner">
+                    <i data-lucide="alert-triangle" class="warning-icon"></i>
+                    <div class="warning-content">
+                        <strong>Warning:</strong> Importing will replace all fields in the builder. Unsaved changes will
+                        be lost.
+                    </div>
+                </div>
+                <div class="extraction-summary">
+                    <h3>Extracted Details</h3>
+                    <ul id="extraction-summary-list">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="confirm-modal-cancel">Cancel</button>
+                <button type="button" class="btn-primary" id="confirm-modal-confirm">Confirm & Overwrite</button>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- ── Loading/Progress Overlay ─────────────────────────────── -->
-<div id="loading-overlay" class="loading-overlay">
-    <div class="loading-card">
-        <div class="loading-spinner"></div>
-        <h3 id="loading-title">Importing Resume</h3>
-        <p id="loading-message">Uploading Resume...</p>
+    <!-- ── Loading/Progress Overlay ─────────────────────────────── -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-card">
+            <div class="loading-spinner"></div>
+            <h3 id="loading-title">Importing Resume</h3>
+            <p id="loading-message">Uploading Resume...</p>
+        </div>
     </div>
-</div>
 
-<!-- ── Toast Notification Container ────────────────────────── -->
-<div id="toast-container" class="toast-container"></div>
+    <!-- ── Toast Notification Container ────────────────────────── -->
+    <div id="toast-container" class="toast-container"></div>
 
-<!-- Our JavaScript — loaded last so the DOM is ready -->
-<script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
+    <!-- Our JavaScript — loaded last so the DOM is ready -->
+    <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
 
 </body>
+
 </html>
