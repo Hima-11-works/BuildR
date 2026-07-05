@@ -108,7 +108,15 @@ def api_get_profile():
     """
     try:
         profile = load_profile()
-        return jsonify(profile.model_dump())
+        profile_dict = profile.model_dump()
+        
+        # Determine if a valid master resume exists (requiring at least name and email)
+        has_valid_resume = False
+        if profile.personal_info.name.strip() and profile.personal_info.email.strip():
+            has_valid_resume = True
+            
+        profile_dict["has_valid_resume"] = has_valid_resume
+        return jsonify(profile_dict)
     except Exception as e:
         # If the JSON file is corrupt or unreadable, tell the client
         return jsonify({"error": f"Failed to load profile: {str(e)}"}), 500

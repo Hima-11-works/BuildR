@@ -299,6 +299,13 @@ class Certification(BaseModel):
 # with a valid (but empty) profile — no crash, no None checks.
 # ──────────────────────────────────────────────────────────────
 
+class ProfileMetadata(BaseModel):
+    """Metadata for tracking creation, updates, and schema version."""
+    created_at: Optional[str] = Field(default=None, description="ISO timestamp of creation")
+    updated_at: Optional[str] = Field(default=None, description="ISO timestamp of last update")
+    version: int = Field(default=1, description="Profile schema version")
+
+
 class Profile(BaseModel):
     """
     The master resume profile — a single document that contains
@@ -307,6 +314,10 @@ class Profile(BaseModel):
     This is what gets saved to / loaded from storage/profile.json.
     """
 
+    metadata: ProfileMetadata = Field(
+        default_factory=ProfileMetadata,
+        description="Metadata for profile management.",
+    )
     personal_info: PersonalInfo = Field(
         default_factory=lambda: PersonalInfo(name="", email=""),
         description="Contact details for the resume header.",

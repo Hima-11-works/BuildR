@@ -137,6 +137,14 @@ def save_profile(profile: Profile) -> None:
     Re-validating ensures we never write garbage to disk.
     """
 
+    # ── Populate Metadata Timestamps ──────────────────────────
+    import datetime
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    if not profile.metadata.created_at:
+        profile.metadata.created_at = now_iso
+    profile.metadata.updated_at = now_iso
+    profile.metadata.version = 1
+
     # ── Re-validate the entire profile tree ───────────────────
     # model_validate() on an existing model instance triggers
     # a full re-check of every field and nested model.

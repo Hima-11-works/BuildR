@@ -253,6 +253,96 @@ function refreshIcons() {
 // 1. LOAD PROFILE — fetch from API and populate the form
 // ═══════════════════════════════════════════════════════════════
 
+let hasValidMasterResume = false;
+
+// ── Simple SPA Router ───────────────────────────────────────
+function router() {
+    const hash = window.location.hash || "#home";
+    const views = ["#view-home", "#view-builder", "#view-tailor"];
+    
+    views.forEach(vId => {
+        const el = document.getElementById(vId.substring(1));
+        if (el) {
+            el.classList.remove("active");
+        }
+    });
+
+    const activeViewId = hash.substring(1);
+    const activeView = document.getElementById(`view-${activeViewId}`);
+    if (activeView) {
+        activeView.classList.add("active");
+    } else {
+        const homeView = document.getElementById("view-home");
+        if (homeView) homeView.classList.add("active");
+    }
+
+    // Toggle save bar & body state
+    if (hash === "#builder") {
+        document.body.classList.add("builder-active");
+    } else {
+        document.body.classList.remove("builder-active");
+    }
+
+    refreshIcons();
+    window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+// ── Update Master Resume Card UI ─────────────────────────────
+function updateMasterResumeStatusCard(profile) {
+    const card = document.getElementById("master-resume-card");
+    if (!card) return;
+
+    const statusText = document.getElementById("status-text");
+    const statusIcon = document.getElementById("status-icon");
+    const dateContainer = document.getElementById("status-date-container");
+    const dateValue = document.getElementById("status-date-value");
+    const statusDesc = document.getElementById("status-desc");
+    const statusActionBtn = document.getElementById("status-action-btn");
+
+    if (profile.has_valid_resume) {
+        card.className = "status-card status-available";
+        statusText.textContent = "Master Resume Available";
+        statusText.style.color = "var(--success)";
+        
+        statusIcon.setAttribute("data-lucide", "check-circle");
+        statusIcon.setAttribute("class", "status-icon-available");
+        
+        dateContainer.style.display = "block";
+        if (profile.metadata && profile.metadata.updated_at) {
+            try {
+                const date = new Date(profile.metadata.updated_at);
+                dateValue.textContent = date.toLocaleString();
+            } catch (e) {
+                dateValue.textContent = "Available";
+            }
+        } else {
+            dateValue.textContent = "Available";
+        }
+        
+        statusDesc.textContent = "Your master resume is fully configured and ready to use. You can generate a PDF copy, view its contents, or tailor it to custom jobs using our AI tools.";
+        
+        statusActionBtn.textContent = "Edit Master Resume";
+        statusActionBtn.className = "btn-secondary";
+        statusActionBtn.href = "#builder";
+    } else {
+        card.className = "status-card status-missing";
+        statusText.textContent = "No Master Resume Found";
+        statusText.style.color = "var(--warning)";
+        
+        statusIcon.setAttribute("data-lucide", "alert-circle");
+        statusIcon.setAttribute("class", "status-icon-missing");
+        
+        dateContainer.style.display = "none";
+        
+        statusDesc.textContent = "Please create a master resume profile first. Your profile serves as the raw source of truth for the AI to tailor resume variants.";
+        
+        statusActionBtn.textContent = "Create Master Resume";
+        statusActionBtn.className = "btn-primary";
+        statusActionBtn.href = "#builder";
+    }
+    refreshIcons();
+}
+
 async function loadProfile() {
     try {
         const response = await fetch("/api/profile");
@@ -266,6 +356,10 @@ async function loadProfile() {
             return;
         }
 
+        // Store validation status globally for routing checks
+        hasValidMasterResume = !!profile.has_valid_resume;
+
+        updateMasterResumeStatusCard(profile);
         populateForm(profile);
         refreshIcons();
     } catch (err) {
@@ -882,6 +976,8 @@ async function saveProfile() {
         if (response.ok) {
             // ── Success! ─────────────────────────────────────
             showToast("Profile saved successfully!", "success");
+            await loadProfile();
+            window.location.hash = "#home";
         } else if (response.status === 422 && result.errors) {
             // ── Validation errors from Pydantic ──────────────
             displayErrors(result.errors);
@@ -1418,6 +1514,22 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("add-certification-btn").addEventListener("click", () => addCertificationItem());
 
     document.getElementById("add-skill-category-btn").addEventListener("click", () => addSkillCategory());
+
+    // ── AI Tailoring home button click check ─────────────────
+    const homeTailorBtn = document.getElementById("btn-home-tailor");
+    if (homeTailorBtn) {
+        homeTailorBtn.addEventListener("click", () => {
+            if (hasValidMasterResume) {
+                window.location.hash = "#tailor";
+            } else {
+                showToast("Please create a master resume profile first (with name and email).", "error");
+            }
+        });
+    }
+
+    // ── Initial Router Setup & Listener ──────────────────────
+    router();
+    window.addEventListener("hashchange", router);
 
     // ── Keyboard shortcut: Ctrl+S to save ────────────────────
     document.addEventListener("keydown", (e) => {
