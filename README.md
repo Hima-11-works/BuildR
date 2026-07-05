@@ -1,2 +1,2 @@
 # BuildR
-The platform allows users to upload or paste their resume and provide the job description of the position they are applying for.
+BuildR helps users create one high-quality master resume that they can download anytime. When they're applying for a specific role, they can use AI to generate tailored versions of that same resume, review and refine them, and then download those job-specific PDFs.
