@@ -305,14 +305,16 @@ def render_latex(profile: Profile) -> str:
         rich_fields["experience_bullets"].append(exp.pop("bullets", []))
         rich_fields["experience_list_type"].append(exp.pop("list_type", "bullet"))
 
-    # Project description & bullets
+    # Project description, bullets & links
     rich_fields["projects_desc"] = []
     rich_fields["projects_bullets"] = []
     rich_fields["projects_list_type"] = []
+    rich_fields["projects_link"] = []
     for proj in data.get("projects", []):
         rich_fields["projects_desc"].append(proj.pop("description", ""))
         rich_fields["projects_bullets"].append(proj.pop("bullets", []))
         rich_fields["projects_list_type"].append(proj.pop("list_type", "bullet"))
+        rich_fields["projects_link"].append(proj.pop("link", None))
 
     # Achievements
     rich_fields["achievements"] = data.pop("achievements", "")
@@ -338,9 +340,19 @@ def render_latex(profile: Profile) -> str:
         desc = rich_fields["projects_desc"][i]
         bullets = rich_fields["projects_bullets"][i]
         list_type = rich_fields["projects_list_type"][i]
+        raw_link = rich_fields["projects_link"][i]
         proj["bullets_type"] = "enumerate" if list_type == "numbered" else "itemize"
         proj["description"] = html_to_latex(desc)
         proj["bullets"] = [html_to_latex(b) for b in bullets]
+        # Restore the raw (unescaped) link — \href{} needs a literal URL.
+        # Normalize URLs missing a scheme (e.g. "github.com/..." → "https://github.com/...").
+        if raw_link and raw_link.strip():
+            link = raw_link.strip()
+            if not link.startswith(("http://", "https://", "mailto:")):
+                link = "https://" + link
+            proj["link"] = link
+        else:
+            proj["link"] = None
 
     # Achievements
     achievements_html = rich_fields.get("achievements", "").strip()
