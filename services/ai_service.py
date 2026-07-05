@@ -333,3 +333,32 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     _validate_tailored_output(profile, tailored)
 
     return tailored
+
+
+def parse_resume_text(text: str) -> Profile:
+    """
+    Send the raw resume text to Gemini and parse it into a structured Profile Pydantic object.
+    """
+    system_instruction = (
+        "You are an expert AI resume parser. Your job is to extract all information from the provided resume text "
+        "and return it structured exactly matching the schema. Extract all contact details (name, email, phone, links), "
+        "education, work experience, projects, skills, certifications, and achievements. Be as accurate and complete as possible, "
+        "preserving all dates, details, bullets, and tools. Do not invent any information that does not exist in the resume text.\n\n"
+        "Crucial formatting rule: Clean up any PDF extraction artifacts like raw ligatures (e.g. replace '\\ufb01' or similar raw characters with 'fi', "
+        "replace '\\ufb03' with 'ffi', replace '\\ufb02' with 'fl') and fix word spacing issues (e.g. 'JA V A' -> 'JAVA', 'F rameworks' -> 'Frameworks', "
+        "'T echnologies' -> 'Technologies'). Ensure all output strings have proper spelling, casing, and spacing."
+    )
+
+    response = _get_client().models.generate_content(
+        model=_MODEL,
+        contents=f"══ RESUME TEXT ══\n{text}\n\nExtract and structure the resume into the response schema.",
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=TailoredProfile,
+            temperature=0.1,  # Low temperature for highest extraction accuracy
+        ),
+    )
+
+    tailored: TailoredProfile = response.parsed
+    return tailored.to_profile()

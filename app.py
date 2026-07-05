@@ -48,8 +48,9 @@ from services.resume_library import (
 # secrets out of source code.
 load_dotenv()
 
-from services.ai_service import tailor_resume
+from services.ai_service import tailor_resume, parse_resume_text
 from services.scraper_service import fetch_job_description, ScrapingError
+from services.parser_service import extract_text_from_pdf, extract_text_from_docx
 
 # ── Step 2: Create the Flask application instance ────────────
 # Flask(__name__) uses the location of THIS module to determine:
@@ -190,6 +191,44 @@ def api_put_profile():
             })
 
         return jsonify({"errors": errors}), 422
+
+
+@app.route("/api/profile/parse", methods=["POST"])
+def api_parse_resume():
+    """
+    Accept a PDF or DOCX file, extract text, call Gemini to parse it into Profile model, and return as JSON.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    
+    filename = file.filename.lower()
+    if not (filename.endswith(".pdf") or filename.endswith(".docx")):
+        return jsonify({"error": "Unsupported file format. Please upload a PDF or DOCX file."}), 400
+        
+    try:
+        import io
+        file_stream = io.BytesIO(file.read())
+        
+        if filename.endswith(".pdf"):
+            text = extract_text_from_pdf(file_stream)
+        else:
+            text = extract_text_from_docx(file_stream)
+            
+        if not text.strip():
+            return jsonify({"error": "The uploaded file contains no readable text."}), 400
+            
+        # Parse text via Gemini into Profile object
+        parsed_profile = parse_resume_text(text)
+        
+        return jsonify(parsed_profile.model_dump())
+    except Exception as e:
+        print(f"Error parsing resume: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
 
 
 # ── Resume Generation API ────────────────────────────────────

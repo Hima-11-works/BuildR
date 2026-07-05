@@ -22,3 +22,5 @@ google-genai
 jinja2
 requests
 beautifulsoup4
+pypdf
+python-docx

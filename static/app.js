@@ -223,11 +223,19 @@ const errorSummary    = document.getElementById("error-summary");
 const errorList       = document.getElementById("error-list");
 const toastContainer  = document.getElementById("toast-container");
 
-// AI tailoring
-const tailorBtn       = document.getElementById("tailor-btn");
-const tailorBtnText   = document.getElementById("tailor-btn-text");
-const jobDescInput    = document.getElementById("job-description");
-const jobUrlInput     = document.getElementById("job-url");
+// Upload & Modal references
+const uploadContainer = document.getElementById("upload-container");
+const browseBtn       = document.getElementById("browse-btn");
+const fileInput       = document.getElementById("resume-file-input");
+
+const confirmationModal = document.getElementById("confirmation-modal");
+const confirmCloseBtn   = document.getElementById("confirm-modal-close");
+const confirmCancelBtn  = document.getElementById("confirm-modal-cancel");
+const confirmConfirmBtn = document.getElementById("confirm-modal-confirm");
+const summaryList       = document.getElementById("extraction-summary-list");
+
+const loadingOverlay   = document.getElementById("loading-overlay");
+const loadingMessage   = document.getElementById("loading-message");
 
 // List containers
 const educationList     = document.getElementById("education-list");
@@ -319,7 +327,7 @@ function updateMasterResumeStatusCard(profile) {
             dateValue.textContent = "Available";
         }
         
-        statusDesc.textContent = "Your master resume is fully configured and ready to use. You can generate a PDF copy, view its contents, or tailor it to custom jobs using our AI tools.";
+        statusDesc.textContent = "Your Master Resume is fully configured and ready to use. You can generate a PDF copy, view its contents, or tailor it to custom jobs using our AI tools.";
         
         statusActionBtn.textContent = "Edit Master Resume";
         statusActionBtn.className = "btn-secondary";
@@ -334,7 +342,7 @@ function updateMasterResumeStatusCard(profile) {
         
         dateContainer.style.display = "none";
         
-        statusDesc.textContent = "Please create a master resume profile first. Your profile serves as the raw source of truth for the AI to tailor resume variants.";
+        statusDesc.textContent = "Please create a Master Resume first. Your Master Resume serves as the raw source of truth for the AI to tailor resume variants.";
         
         statusActionBtn.textContent = "Create Master Resume";
         statusActionBtn.className = "btn-primary";
@@ -944,6 +952,10 @@ function collectFormData() {
 // 4. SAVE PROFILE — collect data and PUT to API
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// 4. SAVE MASTER RESUME — collect data and PUT to API
+// ═══════════════════════════════════════════════════════════════
+
 async function saveProfile() {
     // ── Clear previous errors ────────────────────────────────
     clearErrors();
@@ -956,15 +968,6 @@ async function saveProfile() {
     saveBtnText.textContent = "Saving…";
 
     try {
-        // ── Send to Flask ────────────────────────────────────
-        //
-        // fetch() is the modern browser API for HTTP requests.
-        //   method: 'PUT'  → matches Flask's @app.route methods=['PUT']
-        //   headers         → tells Flask the body is JSON
-        //   body            → the JSON string Flask will parse
-        //
-        // The response is an HTTP response object.  We call
-        // .json() to parse the body as JSON.
         const response = await fetch("/api/profile", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -974,52 +977,70 @@ async function saveProfile() {
         const result = await response.json();
 
         if (response.ok) {
-            // ── Success! ─────────────────────────────────────
-            showToast("Profile saved successfully!", "success");
+            showToast("Master Resume Saved Successfully", "success");
             await loadProfile();
-            window.location.hash = "#home";
+            // User requested to remain on the page, so no redirect.
         } else if (response.status === 422 && result.errors) {
-            // ── Validation errors from Pydantic ──────────────
             displayErrors(result.errors);
             showToast("Please fix the validation errors below.", "error");
         } else {
-            // ── Other server error ───────────────────────────
             showToast(result.error || "Something went wrong.", "error");
         }
     } catch (err) {
         showToast(`Network error: ${err.message}`, "error");
     } finally {
         saveBtn.disabled = false;
-        saveBtnText.textContent = "Save Profile";
+        saveBtnText.textContent = "Save Master Resume";
     }
 }
 
+// Helper to save silently in the background before downloading
+async function saveProfileSilent() {
+    clearErrors();
+    const data = collectFormData();
+    try {
+        const response = await fetch("/api/profile", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+        });
+        const result = await response.json();
+        if (response.ok) {
+            await loadProfile();
+            return true;
+        } else if (response.status === 422 && result.errors) {
+            displayErrors(result.errors);
+            showToast("Please fix the validation errors before downloading.", "error");
+            return false;
+        } else {
+            showToast(result.error || "Failed to auto-save before download.", "error");
+            return false;
+        }
+    } catch (err) {
+        showToast(`Auto-save network error: ${err.message}`, "error");
+        return false;
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════
-// 4b. GENERATE MASTER RESUME — POST to /api/resume/master
-// ═══════════════════════════════════════════════════════════════
-//
-// HOW PDF DOWNLOAD WORKS IN THE BROWSER
-// ─────────────────────────────────────
-// Unlike JSON responses, a PDF is a binary blob.  We can't just
-// call response.json().  Instead:
-//
-//   1. We call response.blob() to read the binary body.
-//   2. Create a temporary object URL with URL.createObjectURL().
-//   3. Create a hidden <a> element pointing to that URL.
-//   4. Programmatically "click" it to trigger the download.
-//   5. Clean up the object URL to free memory.
-//
-// The content-type check (response.headers.get('content-type'))
-// tells us whether the server returned a PDF (success) or JSON
-// (error).  On error, we parse the JSON to get the error message.
+// 4b. DOWNLOAD MASTER RESUME PDF — POST to /api/resume/master
 // ═══════════════════════════════════════════════════════════════
 
 async function generateResume() {
-    // ── Show loading state ───────────────────────────────────
     generateBtn.disabled = true;
-    generateBtnText.textContent = "Generating…";
+    generateBtnText.textContent = "Saving...";
 
+    // 1. Silent Save
+    const saveSuccess = await saveProfileSilent();
+    if (!saveSuccess) {
+        generateBtn.disabled = false;
+        generateBtnText.textContent = "Download Master Resume PDF";
+        refreshIcons();
+        return;
+    }
+
+    // 2. Generate and Download
+    generateBtnText.textContent = "Generating...";
     try {
         const response = await fetch("/api/resume/master", {
             method: "POST",
@@ -1028,19 +1049,17 @@ async function generateResume() {
         const result = await response.json();
 
         if (response.ok && result.status === "ok") {
-            // ── Success: resume is saved in the library ──────
-            showToast("Master resume generated and saved!", "success");
+            showToast("Master Resume PDF downloaded successfully!", "success");
 
-            // Refresh the library list so the new resume appears
+            // Refresh the library list
             loadLibrary();
 
-            // Auto-download the PDF via the new library route
+            // Trigger file download
             downloadFile(
                 `/api/resumes/${encodeURIComponent(result.id)}/pdf`,
                 `${result.id}.pdf`
             );
         } else {
-            // ── Error: show the error message ─────────────────
             const errorMsg = result.error || "Failed to generate resume.";
             showToast(errorMsg, "error");
 
@@ -1052,94 +1071,168 @@ async function generateResume() {
         showToast(`Network error: ${err.message}`, "error");
     } finally {
         generateBtn.disabled = false;
-        generateBtnText.textContent = "Generate Master Resume";
+        generateBtnText.textContent = "Download Master Resume PDF";
         refreshIcons();
     }
 }
 
-
 // ═══════════════════════════════════════════════════════════════
-// 4c. GENERATE TAILORED RESUME — POST to /api/resume/tailored
-// ═══════════════════════════════════════════════════════════════
-//
-// HOW THIS DIFFERS FROM generateResume():
-//   • It sends the job description in the POST body.
-//   • The server calls Gemini to tailor the resume, then renders
-//     the AI's JSON output through the same LaTeX → PDF pipeline.
-//   • The download filename is "tailored_resume.pdf".
-//
-// The blob download pattern is identical to the master resume.
+// 4c. UPLOAD EXISTING RESUME — upload & parse via AI
 // ═══════════════════════════════════════════════════════════════
 
-async function generateTailoredResume() {
-    // ── Validate: need either pasted text OR a URL ───────────
-    const jobDescription = jobDescInput.value.trim();
-    const jobUrl = jobUrlInput.value.trim();
+let pendingExtractedProfile = null;
 
-    if (!jobDescription && !jobUrl) {
-        showToast("Please paste a job description or enter a URL.", "error");
-        jobDescInput.focus();
+// Trigger file input dialog
+if (browseBtn && fileInput) {
+    browseBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileInput.click();
+    });
+}
+
+// Drag and drop events on container
+if (uploadContainer && fileInput) {
+    uploadContainer.addEventListener("click", (e) => {
+        if (e.target !== browseBtn) {
+            fileInput.click();
+        }
+    });
+
+    ["dragenter", "dragover"].forEach(eventName => {
+        uploadContainer.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadContainer.classList.add("dragover");
+        }, false);
+    });
+
+    ["dragleave", "drop"].forEach(eventName => {
+        uploadContainer.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadContainer.classList.remove("dragover");
+        }, false);
+    });
+
+    uploadContainer.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+            handleUploadedFile(files[0]);
+        }
+    }, false);
+}
+
+if (fileInput) {
+    fileInput.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            handleUploadedFile(e.target.files[0]);
+        }
+    });
+}
+
+async function handleUploadedFile(file) {
+    const filename = file.name.toLowerCase();
+    if (!filename.endsWith(".pdf") && !filename.endsWith(".docx")) {
+        showToast("Unsupported file type. Please upload a PDF or DOCX file.", "error");
         return;
     }
 
-    // ── Build the request body ────────────────────────────────
-    // Text takes priority — it's the reliable path.  If the user
-    // filled in both, the pasted text wins (the backend also
-    // enforces this, but we avoid sending a URL when unnecessary).
-    const body = {};
-    if (jobDescription) {
-        body.job_description = jobDescription;
-    } else {
-        body.job_url = jobUrl;
-    }
+    loadingOverlay.classList.add("active");
+    loadingMessage.textContent = "Uploading Resume...";
 
-    // ── Show loading state ───────────────────────────────────
-    tailorBtn.disabled = true;
-    tailorBtnText.textContent = jobDescription ? "Tailoring…" : "Fetching & Tailoring…";
+    let phaseTimer1 = setTimeout(() => {
+        loadingMessage.textContent = "Extracting Text...";
+    }, 1200);
+
+    let phaseTimer2 = setTimeout(() => {
+        loadingMessage.textContent = "AI Understanding Resume...";
+    }, 2500);
+
+    const formData = new FormData();
+    formData.append("file", file);
 
     try {
-        const response = await fetch("/api/resume/tailored", {
+        const response = await fetch("/api/profile/parse", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
+            body: formData
         });
 
-        const result = await response.json();
+        clearTimeout(phaseTimer1);
+        clearTimeout(phaseTimer2);
 
-        if (response.ok && result.status === "ok") {
-            // ── Success: resume is saved in the library ──────
-            showToast("Tailored resume generated and saved!", "success");
-
-            // Refresh the library list so the new resume appears
-            loadLibrary();
-
-            // Auto-download the PDF via the new library route
-            downloadFile(
-                `/api/resumes/${encodeURIComponent(result.id)}/pdf`,
-                `${result.id}.pdf`
-            );
-        } else {
-            // ── Error: show the error message ─────────────────
-            const errorMsg = result.error || "Failed to generate tailored resume.";
-            showToast(errorMsg, "error");
-
-            // If it was a scraping error and the textarea is empty,
-            // nudge the user toward the manual fallback
-            if (!jobDescription && jobUrl) {
-                jobDescInput.focus();
-            }
-
-            if (result.log) {
-                console.error("Tectonic compilation log:\n", result.log);
-            }
+        if (!response.ok) {
+            const result = await response.json();
+            throw new Error(result.error || "Failed to parse resume.");
         }
+
+        const profile = await response.json();
+        
+        loadingMessage.textContent = "Populating Master Resume...";
+        setTimeout(() => {
+            loadingOverlay.classList.remove("active");
+            showConfirmationModal(profile);
+        }, 600);
+
     } catch (err) {
-        showToast(`Network error: ${err.message}`, "error");
-    } finally {
-        tailorBtn.disabled = false;
-        tailorBtnText.textContent = "Generate Tailored Resume";
-        refreshIcons();
+        clearTimeout(phaseTimer1);
+        clearTimeout(phaseTimer2);
+        loadingOverlay.classList.remove("active");
+        showToast(err.message, "error");
+        if (fileInput) fileInput.value = "";
     }
+}
+
+function showConfirmationModal(profile) {
+    pendingExtractedProfile = profile;
+    summaryList.innerHTML = "";
+
+    const name = profile.personal_info?.name || "N/A";
+    const eduCount = profile.education?.length || 0;
+    const expCount = profile.experience?.length || 0;
+    const projCount = profile.projects?.length || 0;
+    
+    let skillsCount = 0;
+    if (profile.skills?.categories) {
+        skillsCount = Object.keys(profile.skills.categories).length;
+    }
+    const certCount = profile.certifications?.length || 0;
+
+    const summaryItems = [
+        { label: "Name", value: name },
+        { label: "Education Credentials", value: eduCount },
+        { label: "Work Experience Entries", value: expCount },
+        { label: "Projects", value: projCount },
+        { label: "Skill Categories", value: skillsCount },
+        { label: "Certifications", value: certCount }
+    ];
+
+    summaryItems.forEach(item => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${escapeHtml(item.label)}</span> <span class="item-count">${escapeHtml(String(item.value))}</span>`;
+        summaryList.appendChild(li);
+    });
+
+    confirmationModal.classList.add("active");
+}
+
+function closeModal() {
+    confirmationModal.classList.remove("active");
+    pendingExtractedProfile = null;
+    if (fileInput) fileInput.value = "";
+}
+
+if (confirmCloseBtn) confirmCloseBtn.addEventListener("click", closeModal);
+if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", closeModal);
+if (confirmConfirmBtn) {
+    confirmConfirmBtn.addEventListener("click", () => {
+        if (pendingExtractedProfile) {
+            populateForm(pendingExtractedProfile);
+            showToast("Master Resume imported successfully! All fields remain fully editable.", "success");
+        }
+        closeModal();
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1500,7 +1593,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Save button ──────────────────────────────────────────
     saveBtn.addEventListener("click", saveProfile);
     generateBtn.addEventListener("click", generateResume);
-    tailorBtn.addEventListener("click", generateTailoredResume);
 
     // ── Resume library ───────────────────────────────────────
     loadLibrary();
@@ -1522,7 +1614,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (hasValidMasterResume) {
                 window.location.hash = "#tailor";
             } else {
-                showToast("Please create a master resume profile first (with name and email).", "error");
+                showToast("Please create a Master Resume first (with name and email).", "error");
             }
         });
     }

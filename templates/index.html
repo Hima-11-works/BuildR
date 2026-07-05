@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BuildR — Profile Editor</title>
-    <meta name="description" content="Edit your master resume profile. Add education, experience, projects, skills, and certifications.">
+    <title>BuildR — Master Resume Builder</title>
+    <meta name="description" content="Create and maintain your Master Resume. Add education, experience, projects, skills, and certifications.">
 
     <!-- Google Fonts: Sora & Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,7 +49,7 @@
             <a href="#builder" class="home-action-btn primary-action">
                 <i data-lucide="file-text" class="action-icon"></i>
                 <span class="action-title">Create / Edit Master Resume</span>
-                <span class="action-desc">Build your master profile with education, experience, and skills.</span>
+                <span class="action-desc">Build your Master Resume with education, experience, and skills.</span>
             </a>
             <button type="button" id="btn-home-tailor" class="home-action-btn secondary-action">
                 <i data-lucide="sparkles" class="action-icon"></i>
@@ -71,7 +71,7 @@
                 </div>
             </div>
             <p id="status-desc" class="status-desc">
-                Please create a master resume profile first. Your profile serves as the raw source of truth for the AI to tailor resume variants.
+                Please create a Master Resume first. Your Master Resume serves as the raw source of truth for the AI to tailor resume variants.
             </p>
             <div class="status-card-actions">
                 <a href="#builder" id="status-action-btn" class="btn-primary">Create Master Resume</a>
@@ -85,7 +85,7 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
-         BUILDER VIEW (Master Profile Editor)
+         BUILDER VIEW (Master Resume Builder)
          ═══════════════════════════════════════════════════════ -->
     <div id="view-builder" class="app-view">
         <div class="view-header">
@@ -97,8 +97,26 @@
         <!-- ── Header ──────────────────────────────────────────── -->
         <header class="app-header">
             <h1>BuildR</h1>
-            <p>Your master resume profile — edit everything in one place.</p>
+            <p>Your Master Resume — edit everything in one place.</p>
+            <p class="intro-text">
+                Your Master Resume is your source of truth. Build it once, keep it updated, and later tailor it for different jobs using AI.
+            </p>
         </header>
+
+        <!-- ── Upload Existing Resume ──────────────────────────── -->
+        <section class="section-card upload-section">
+            <div class="upload-dropzone" id="upload-container">
+                <i data-lucide="upload-cloud" class="upload-cloud-icon"></i>
+                <h3>Upload Existing Resume</h3>
+                <p class="upload-desc">
+                    Drag and drop your PDF or DOCX resume here, or click to browse.
+                    Gemini AI will automatically extract your details to populate the form below.
+                </p>
+                <button type="button" class="btn-secondary" id="browse-btn">Browse Files</button>
+                <input type="file" id="resume-file-input" accept=".pdf,.docx" style="display: none;">
+                <span class="upload-hint">Supported formats: PDF, DOCX</span>
+            </div>
+        </section>
 
         <!-- ── Error Summary Banner ────────────────────────────── -->
         <div id="error-summary" class="error-summary">
@@ -221,60 +239,6 @@
             </div>
         </section>
 
-        <!-- ═══════════════════════════════════════════════════════
-             AI TAILORED RESUME
-             ═══════════════════════════════════════════════════════ -->
-        <section class="section-card ai-section" id="section-tailored">
-            <div class="section-header">
-                <h2><i data-lucide="sparkles" class="section-icon"></i> AI Tailored Resume</h2>
-            </div>
-            <p class="ai-section-description">
-                Paste a job description below and let AI select, reorder, and rephrase your
-                profile content to match. Your real experience &mdash; optimized for every application.
-            </p>
-
-            <!-- URL Input -->
-            <div class="form-group full-width">
-                <label for="job-url">
-                    <i data-lucide="link" class="label-icon"></i> Job Posting URL
-                </label>
-                <input
-                    type="url"
-                    id="job-url"
-                    class="job-url-input"
-                    placeholder="https://careers.example.com/software-engineer-12345"
-                >
-                <span class="scraping-hint">
-                    <i data-lucide="info" class="hint-icon"></i>
-                    Scraping may not work on all sites &mdash; LinkedIn, Indeed, and others block automated access.
-                </span>
-            </div>
-
-            <!-- OR Divider -->
-            <div class="input-or-divider">
-                <span class="or-line"></span>
-                <span class="or-text">OR</span>
-                <span class="or-line"></span>
-            </div>
-
-            <!-- Job Description Textarea (always available as fallback) -->
-            <div class="form-group full-width">
-                <label for="job-description">Job Description</label>
-                <textarea
-                    id="job-description"
-                    class="job-description-input"
-                    rows="8"
-                    placeholder="Paste the full job posting here&#10;&#10;e.g. &quot;We are looking for a Software Engineer with experience in Python, React, and cloud infrastructure…&quot;"
-                ></textarea>
-                <span class="field-error"></span>
-            </div>
-            <div class="ai-section-actions">
-                <button type="button" id="tailor-btn" class="btn-accent">
-                    <i data-lucide="sparkles" class="btn-icon"></i>
-                    <span id="tailor-btn-text">Generate Tailored Resume</span>
-                </button>
-            </div>
-        </section>
 
         <!-- ═══════════════════════════════════════════════════════
              RESUME LIBRARY
@@ -321,12 +285,50 @@
 <!-- ── Fixed Save Bar ──────────────────────────────────────── -->
 <div class="save-bar">
     <button type="button" id="save-btn" class="btn-primary">
-        <span id="save-btn-text">Save Profile</span>
+        <i data-lucide="save" class="btn-icon"></i>
+        <span id="save-btn-text">Save Master Resume</span>
     </button>
     <button type="button" id="generate-btn" class="btn-secondary">
-        <i data-lucide="file-text" class="btn-icon"></i>
-        <span id="generate-btn-text">Generate Master Resume</span>
+        <i data-lucide="download" class="btn-icon"></i>
+        <span id="generate-btn-text">Download Master Resume PDF</span>
     </button>
+</div>
+
+<!-- ── Confirmation Modal ────────────────────────────────────── -->
+<div id="confirmation-modal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2>Confirm Master Resume Import</h2>
+            <button type="button" class="modal-close-btn" id="confirm-modal-close"><i data-lucide="x"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="warning-banner">
+                <i data-lucide="alert-triangle" class="warning-icon"></i>
+                <div class="warning-content">
+                    <strong>Warning:</strong> Importing will replace all fields in the builder. Unsaved changes will be lost.
+                </div>
+            </div>
+            <div class="extraction-summary">
+                <h3>Extracted Details</h3>
+                <ul id="extraction-summary-list">
+                    <!-- Populated dynamically -->
+                </ul>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-secondary" id="confirm-modal-cancel">Cancel</button>
+            <button type="button" class="btn-primary" id="confirm-modal-confirm">Confirm & Overwrite</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Loading/Progress Overlay ─────────────────────────────── -->
+<div id="loading-overlay" class="loading-overlay">
+    <div class="loading-card">
+        <div class="loading-spinner"></div>
+        <h3 id="loading-title">Importing Resume</h3>
+        <p id="loading-message">Uploading Resume...</p>
+    </div>
 </div>
 
 <!-- ── Toast Notification Container ────────────────────────── -->
