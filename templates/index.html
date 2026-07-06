@@ -282,7 +282,7 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════
-         AI TAILORING SETUP VIEW (COMING SOON)
+         TAILOR YOUR RESUME VIEW
          ═══════════════════════════════════════════════════════ -->
         <div id="view-tailor" class="app-view">
             <div class="view-header">
@@ -290,15 +290,218 @@
                     <i data-lucide="arrow-left"></i> Back to Home
                 </a>
             </div>
+
+            <header class="app-header">
+                <h1>Tailor Your Resume</h1>
+                <p class="intro-text">Align your master profile with a specific job description using AI-driven optimization.</p>
+            </header>
+
+            <!-- SECTION 1 — Job Description -->
+            <section class="section-card" id="tailor-section-job">
+                <div class="section-header">
+                    <h2><i data-lucide="briefcase" class="section-icon"></i> 1. Job Description</h2>
+                </div>
+                
+                <div class="job-input-container">
+                    <!-- Option B: Paste Job Posting URL -->
+                    <div class="form-group">
+                        <label for="tailor-jd-url">Paste Job Posting URL (Best effort)</label>
+                        <div class="url-input-wrapper">
+                            <input type="url" id="tailor-jd-url" placeholder="e.g. https://careers.company.com/job/12345">
+                            <button type="button" id="tailor-btn-scrape" class="btn-secondary">
+                                <i data-lucide="download-cloud" class="btn-icon"></i>
+                                <span>Fetch Posting</span>
+                            </button>
+                        </div>
+                        <span class="field-hint">We'll automatically extract the text from the link, if supported.</span>
+                    </div>
+
+                    <div class="jd-separator">
+                        <span class="jd-separator-text">OR</span>
+                    </div>
+
+                    <!-- Option A: Paste Job Description -->
+                    <div class="form-group">
+                        <label for="tailor-jd-text">Paste Job Description manually (Guaranteed)</label>
+                        <textarea id="tailor-jd-text" rows="8" placeholder="Paste the text of the job description, including qualifications, responsibilities, and technologies..."></textarea>
+                        <div id="tailor-jd-status" class="jd-status-indicator" style="display: none;">
+                            <i data-lucide="check-circle" class="status-icon-ok"></i>
+                            <span id="tailor-jd-status-text">Job Description Ready ✓</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic Key Skills Detected Card -->
+                <div id="tailor-skills-card" class="skills-detected-card" style="display: none;">
+                    <div class="skills-card-header">
+                        <i data-lucide="sparkles" class="skills-card-icon"></i>
+                        <h3>Key Skills & Keywords Detected</h3>
+                    </div>
+                    <div class="skills-card-body">
+                        <div class="skills-detected-group">
+                            <span class="group-label">Technical Skills</span>
+                            <div id="detected-tech-skills" class="skills-badges-list">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+                        <div class="skills-detected-group">
+                            <span class="group-label">Keywords & Methodologies</span>
+                            <div id="detected-keywords" class="skills-badges-list">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2 — Tailoring Preferences -->
+            <section class="section-card" id="tailor-section-preferences">
+                <div class="section-header">
+                    <h2><i data-lucide="sliders" class="section-icon"></i> 2. Tailoring Preferences</h2>
+                </div>
+
+                <!-- Resume Style Radio Group -->
+                <div class="form-group">
+                    <label>Resume Style</label>
+                    <div class="style-radio-group">
+                        <label class="style-radio-card" id="label-style-conservative">
+                            <input type="radio" name="tailor-style" value="conservative" id="style-conservative">
+                            <div class="radio-card-content">
+                                <span class="radio-card-title">Conservative</span>
+                                <span class="radio-card-desc">Minimal AI rewriting. Focuses primarily on section selection.</span>
+                            </div>
+                        </label>
+                        <label class="style-radio-card active" id="label-style-balanced">
+                            <input type="radio" name="tailor-style" value="balanced" id="style-balanced" checked>
+                            <div class="radio-card-content">
+                                <span class="radio-card-title">Balanced</span>
+                                <span class="radio-card-desc">Optimize bullet phrasing to align with keywords while preserving original meanings.</span>
+                            </div>
+                        </label>
+                        <label class="style-radio-card" id="label-style-aggressive">
+                            <input type="radio" name="tailor-style" value="aggressive" id="style-aggressive">
+                            <div class="radio-card-content">
+                                <span class="radio-card-title">Aggressive</span>
+                                <span class="radio-card-desc">Rewrite bullet points to maximize ATS matching and keywords while remaining strictly truthful.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <!-- Focus Areas Checkboxes -->
+                    <div class="form-group">
+                        <label>AI Focus Areas (Sections to prioritize)</label>
+                        <div class="focus-checkbox-grid">
+                            <label class="checkbox-pill">
+                                <input type="checkbox" id="focus-skills" value="skills" checked>
+                                <span>Skills</span>
+                            </label>
+                            <label class="checkbox-pill">
+                                <input type="checkbox" id="focus-projects" value="projects" checked>
+                                <span>Projects</span>
+                            </label>
+                            <label class="checkbox-pill">
+                                <input type="checkbox" id="focus-experience" value="experience" checked>
+                                <span>Experience</span>
+                            </label>
+                            <label class="checkbox-pill">
+                                <input type="checkbox" id="focus-summary" value="summary" checked>
+                                <span>Summary</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Job Level Dropdown -->
+                    <div class="form-group">
+                        <label for="tailor-job-level">Target Job Level</label>
+                        <select id="tailor-job-level">
+                            <option value="internship">Internship</option>
+                            <option value="newgrad">New Graduate</option>
+                            <option value="entry" selected>Entry Level</option>
+                            <option value="mid">Mid Level</option>
+                            <option value="senior">Senior</option>
+                        </select>
+                        <span class="field-hint">Helps the AI match the expected professional tone.</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3 — Contact Information -->
+            <section class="section-card" id="tailor-section-contact">
+                <div class="section-header">
+                    <h2><i data-lucide="user" class="section-icon"></i> 3. Contact Information</h2>
+                </div>
+                <p class="section-desc-text">Verify contact details to use for this specific application. Customizing these here will not overwrite your Master Resume.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="tailor-pi-name">Full Name</label>
+                        <input type="text" id="tailor-pi-name" placeholder="e.g. Jane Doe">
+                    </div>
+                    <div class="form-group">
+                        <label for="tailor-pi-email">Email</label>
+                        <input type="email" id="tailor-pi-email" placeholder="e.g. jane@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="tailor-pi-phone">Phone Number</label>
+                        <input type="text" id="tailor-pi-phone" placeholder="e.g. +1 555-123-4567">
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4 — Ready to Generate -->
+            <section class="section-card" id="tailor-section-summary">
+                <div class="summary-card-wrapper">
+                    <div class="summary-requirements">
+                        <h3>Tailoring Checklist</h3>
+                        <div class="requirement-item" id="req-master-resume">
+                            <i data-lucide="circle-dashed" class="req-icon status-waiting"></i>
+                            <span>Master Resume: <strong class="req-status-text">Loading...</strong></span>
+                        </div>
+                        <div class="requirement-item" id="req-job-description">
+                            <i data-lucide="circle-dashed" class="req-icon status-waiting"></i>
+                            <span>Job Description: <strong class="req-status-text">Missing</strong></span>
+                        </div>
+                    </div>
+                    <div class="summary-divider"></div>
+                    <div class="summary-actions-info">
+                        <h3>AI Action Plan</h3>
+                        <ul class="action-plan-list">
+                            <li><i data-lucide="sparkles" class="plan-icon"></i> Optimize ATS keywords</li>
+                            <li><i data-lucide="check" class="plan-icon"></i> Improve bullet points</li>
+                            <li><i data-lucide="layers" class="plan-icon"></i> Reorder sections where appropriate</li>
+                            <li><i data-lucide="shield-check" class="plan-icon"></i> Preserve factual accuracy</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="tailor-view-buttons">
+                    <a href="#home" class="btn-secondary">Back to Home</a>
+                    <button type="button" id="tailor-btn-generate" class="btn-primary" disabled>
+                        <i data-lucide="wand" class="btn-icon"></i>
+                        <span>Generate AI Tailored Resume</span>
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════
+         AI TAILORING WORKSPACE VIEW (PLACEHOLDER FOR PROMPT 4)
+         ═══════════════════════════════════════════════════════ -->
+        <div id="view-tailor-workspace" class="app-view">
+            <div class="view-header">
+                <a href="#tailor" class="btn-back">
+                    <i data-lucide="arrow-left"></i> Back to Setup
+                </a>
+            </div>
             <div class="coming-soon-card">
                 <div class="placeholder-icon-wrapper">
                     <i data-lucide="sparkles" class="placeholder-icon"></i>
                 </div>
-                <h2>AI Tailoring Setup</h2>
-                <div class="coming-soon-badge">Coming Soon</div>
+                <h2>AI Editing Workspace</h2>
+                <div class="coming-soon-badge">Prompt 4 Target</div>
                 <p class="placeholder-desc">
-                    Tailor your master resume to match specific job roles. Our AI alignment helper will select,
-                    rephrase, and prioritize your experience bullets to best match the job description.
+                    Your resume tailoring has been initiated! The editing workspace will load here, allowing you to review rephrased bullets, edit sections, and compile the final tailored PDF.
                 </p>
             </div>
         </div>

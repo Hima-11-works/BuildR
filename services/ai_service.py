@@ -362,3 +362,44 @@ def parse_resume_text(text: str) -> Profile:
 
     tailored: TailoredProfile = response.parsed
     return tailored.to_profile()
+
+
+# ── Job Analysis Schema and Service ───────────────────────────
+from pydantic import BaseModel, Field
+
+class JobAnalysis(BaseModel):
+    """Structured analysis results from a job description."""
+    skills: list[str] = Field(
+        description="Top 5-8 critical technical skills, programming languages, libraries, frameworks, databases, or developer tools requested."
+    )
+    keywords: list[str] = Field(
+        description="Top 5-8 crucial domain concepts, industry buzzwords, methodologies, workflows, or certifications requested (e.g., Agile, Scrum, CI/CD, System Design, Unit Testing)."
+    )
+
+
+def analyze_job_description(job_description: str) -> JobAnalysis:
+    """
+    Send a job description to Gemini and parse it into structured JobAnalysis (skills and keywords).
+    """
+    system_instruction = (
+        "You are an expert AI recruiter and technical job analyst.\n\n"
+        "Your task is to analyze the provided job description and extract:\n"
+        "1. The top 5-8 most critical technical skills (languages, frameworks, databases, developer tools, libraries).\n"
+        "2. The top 5-8 most critical keywords, domain concepts, or methodologies (e.g., Agile, Scrum, CI/CD, System Design, Unit Testing, AWS, certifications).\n\n"
+        "Keep each skill and keyword concise (usually 1-3 words, e.g., 'React', 'TypeScript', 'Unit Testing').\n"
+        "Do NOT invent requirements. Only extract what is explicitly mentioned or strongly, clearly implied in the job description."
+    )
+
+    response = _get_client().models.generate_content(
+        model=_MODEL,
+        contents=f"══ JOB DESCRIPTION ══\n{job_description}\n\nAnalyze and extract the key skills and keywords.",
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=JobAnalysis,
+            temperature=0.1,  # Low temperature for highest analytical accuracy
+        ),
+    )
+
+    return response.parsed
+

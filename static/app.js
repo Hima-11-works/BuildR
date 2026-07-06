@@ -262,11 +262,12 @@ function refreshIcons() {
 // ═══════════════════════════════════════════════════════════════
 
 let hasValidMasterResume = false;
+let cachedProfile = null;
 
 // ── Simple SPA Router ───────────────────────────────────────
 function router() {
     const hash = window.location.hash || "#home";
-    const views = ["#view-home", "#view-builder", "#view-tailor"];
+    const views = ["#view-home", "#view-builder", "#view-tailor", "#view-tailor-workspace"];
     
     views.forEach(vId => {
         const el = document.getElementById(vId.substring(1));
@@ -289,6 +290,73 @@ function router() {
         document.body.classList.add("builder-active");
     } else {
         document.body.classList.remove("builder-active");
+    }
+
+    // Load setup data if tailoring page is opened
+    if (hash === "#tailor") {
+        // Auto-load contact details from cached profile
+        if (cachedProfile) {
+            const pi = cachedProfile.personal_info || {};
+            const nameField = document.getElementById("tailor-pi-name");
+            const emailField = document.getElementById("tailor-pi-email");
+            const phoneField = document.getElementById("tailor-pi-phone");
+            
+            if (nameField && !nameField.value.trim()) nameField.value = pi.name || "";
+            if (emailField && !emailField.value.trim()) emailField.value = pi.email || "";
+            if (phoneField && !phoneField.value.trim()) phoneField.value = pi.phone || "";
+        }
+        
+        // Restore setup form state from sessionStorage
+        try {
+            const savedState = sessionStorage.getItem("tailorSetupState");
+            if (savedState) {
+                const state = JSON.parse(savedState);
+                if (state.job_description) {
+                    const jdText = document.getElementById("tailor-jd-text");
+                    if (jdText && !jdText.value.trim()) {
+                        jdText.value = state.job_description;
+                        updateJdStatus();
+                    }
+                }
+                if (state.job_url) {
+                    const jdUrl = document.getElementById("tailor-jd-url");
+                    if (jdUrl && !jdUrl.value.trim()) jdUrl.value = state.job_url;
+                }
+                if (state.contact_info) {
+                    const c = state.contact_info;
+                    if (c.name) document.getElementById("tailor-pi-name").value = c.name;
+                    if (c.email) document.getElementById("tailor-pi-email").value = c.email;
+                    if (c.phone) document.getElementById("tailor-pi-phone").value = c.phone;
+                }
+                if (state.preferences) {
+                    const p = state.preferences;
+                    if (p.style) {
+                        const rad = document.getElementById(`style-${p.style}`);
+                        if (rad) {
+                            rad.checked = true;
+                            document.querySelectorAll("input[name='tailor-style']").forEach(input => {
+                                const card = input.closest(".style-radio-card");
+                                if (card) card.classList.toggle("active", input.checked);
+                            });
+                        }
+                    }
+                    if (p.job_level) {
+                        const levelSel = document.getElementById("tailor-job-level");
+                        if (levelSel) levelSel.value = p.job_level;
+                    }
+                    if (p.focus_areas && Array.isArray(p.focus_areas)) {
+                        ["skills", "projects", "experience", "summary"].forEach(area => {
+                            const cb = document.getElementById(`focus-${area}`);
+                            if (cb) cb.checked = p.focus_areas.includes(area);
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error loading saved tailoring state:", e);
+        }
+        
+        updateTailorChecklist();
     }
 
     refreshIcons();
@@ -366,6 +434,7 @@ async function loadProfile() {
 
         // Store validation status globally for routing checks
         hasValidMasterResume = !!profile.has_valid_resume;
+        cachedProfile = profile;
 
         updateMasterResumeStatusCard(profile);
         populateForm(profile);
@@ -1649,9 +1718,271 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // ── Tailor Your Resume View Events ──────────────────────────
+    const jdTextarea = document.getElementById("tailor-jd-text");
+    const jdUrlInput = document.getElementById("tailor-jd-url");
+    const btnScrape = document.getElementById("tailor-btn-scrape");
+    const btnGenerateTailored = document.getElementById("tailor-btn-generate");
+    
+    if (jdTextarea) {
+        jdTextarea.addEventListener("input", () => {
+            updateJdStatus();
+            clearTimeout(analyzeJdTimeout);
+            analyzeJdTimeout = setTimeout(() => {
+                analyzeJobDescriptionText(jdTextarea.value.trim());
+            }, 1200);
+        });
+        
+        jdTextarea.addEventListener("blur", () => {
+            updateJdStatus();
+            analyzeJobDescriptionText(jdTextarea.value.trim());
+        });
+    }
+    
+    document.querySelectorAll("input[name='tailor-style']").forEach(radio => {
+        radio.addEventListener("change", () => {
+            document.querySelectorAll("input[name='tailor-style']").forEach(input => {
+                const card = input.closest(".style-radio-card");
+                if (card) {
+                    card.classList.toggle("active", input.checked);
+                }
+            });
+        });
+    });
+    
+    if (btnScrape && jdUrlInput && jdTextarea) {
+        btnScrape.addEventListener("click", async () => {
+            const url = jdUrlInput.value.trim();
+            if (!url) {
+                showToast("Please enter a valid job posting URL first.", "error");
+                return;
+            }
+            
+            btnScrape.disabled = true;
+            const originalBtnHtml = btnScrape.innerHTML;
+            btnScrape.innerHTML = `<span class="loading-spinner" style="width: 14px; height: 14px; border-width: 2px; margin: 0; display: inline-block; vertical-align: middle;"></span> <span>Fetching...</span>`;
+            jdTextarea.disabled = true;
+            jdUrlInput.disabled = true;
+            
+            try {
+                const response = await fetch("/api/scrape-job", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const result = await response.json();
+                if (response.ok && result.status === "ok") {
+                    jdTextarea.value = result.job_description;
+                    updateJdStatus();
+                    showToast("Job description fetched and loaded!", "success");
+                    analyzeJobDescriptionText(result.job_description);
+                } else {
+                    const errMsg = result.error || "This website doesn't allow automated extraction. Please copy and paste the job description below instead.";
+                    showToast(errMsg, "error");
+                    jdTextarea.focus();
+                }
+            } catch (err) {
+                showToast("This website doesn't allow automated extraction. Please copy and paste the job description below instead.", "error");
+                jdTextarea.focus();
+            } finally {
+                btnScrape.disabled = false;
+                btnScrape.innerHTML = originalBtnHtml;
+                jdTextarea.disabled = false;
+                jdUrlInput.disabled = false;
+                refreshIcons();
+            }
+        });
+    }
+    
+    if (btnGenerateTailored) {
+        btnGenerateTailored.addEventListener("click", () => {
+            const styleRadio = document.querySelector("input[name='tailor-style']:checked");
+            const style = styleRadio ? styleRadio.value : "balanced";
+            
+            const focus_areas = [];
+            ["skills", "projects", "experience", "summary"].forEach(area => {
+                const cb = document.getElementById(`focus-${area}`);
+                if (cb && cb.checked) focus_areas.push(area);
+            });
+            
+            const job_level = document.getElementById("tailor-job-level").value;
+            
+            const nameVal = document.getElementById("tailor-pi-name").value.trim();
+            const emailVal = document.getElementById("tailor-pi-email").value.trim();
+            const phoneVal = document.getElementById("tailor-pi-phone").value.trim();
+            
+            const jdText = document.getElementById("tailor-jd-text").value.trim();
+            const jdUrl = document.getElementById("tailor-jd-url").value.trim();
+            
+            const setupState = {
+                contact_info: {
+                    name: nameVal,
+                    email: emailVal,
+                    phone: phoneVal
+                },
+                job_description: jdText,
+                job_url: jdUrl,
+                preferences: {
+                    style: style,
+                    focus_areas: focus_areas,
+                    job_level: job_level
+                }
+            };
+            
+            sessionStorage.setItem("tailorSetupState", JSON.stringify(setupState));
+            window.location.hash = "#tailor-workspace";
+        });
+    }
+
     // ── Remove transitions blocker ───────────────────────────
     // Allow the browser to paint the initial styled page before enabling theme transitions
     setTimeout(() => {
         document.body.classList.remove("no-transition");
     }, 100);
 });
+
+// ── Global Helper Functions for Tailoring View ────────────────
+let analyzeJdTimeout = null;
+
+function updateJdStatus() {
+    const jdTextarea = document.getElementById("tailor-jd-text");
+    if (!jdTextarea) return;
+    
+    const jdText = jdTextarea.value.trim();
+    const statusDiv = document.getElementById("tailor-jd-status");
+    const statusText = document.getElementById("tailor-jd-status-text");
+    
+    if (jdText.length > 50) {
+        const wordCount = jdText.split(/\s+/).filter(Boolean).length;
+        if (statusText) statusText.textContent = `Job Description Ready ✓ (${wordCount} words)`;
+        if (statusDiv) statusDiv.style.display = "flex";
+    } else {
+        if (statusDiv) statusDiv.style.display = "none";
+    }
+    updateTailorChecklist();
+}
+
+function updateTailorChecklist() {
+    const masterReq = document.getElementById("req-master-resume");
+    const jdReq = document.getElementById("req-job-description");
+    const generateBtn = document.getElementById("tailor-btn-generate");
+    
+    let isMasterOk = false;
+    let isJdOk = false;
+    
+    // Master resume check
+    if (masterReq) {
+        const icon = masterReq.querySelector(".req-icon");
+        const statusText = masterReq.querySelector(".req-status-text");
+        
+        if (hasValidMasterResume) {
+            if (icon) {
+                icon.setAttribute("class", "req-icon status-ok");
+                icon.setAttribute("data-lucide", "check-circle");
+            }
+            if (statusText) {
+                statusText.textContent = "Saved";
+                statusText.style.color = "var(--success)";
+            }
+            isMasterOk = true;
+        } else {
+            if (icon) {
+                icon.setAttribute("class", "req-icon status-missing");
+                icon.setAttribute("data-lucide", "alert-circle");
+            }
+            if (statusText) {
+                statusText.textContent = "Missing";
+                statusText.style.color = "var(--error)";
+            }
+        }
+    }
+    
+    // Job Description check
+    const jdTextarea = document.getElementById("tailor-jd-text");
+    const jdText = jdTextarea ? jdTextarea.value.trim() : "";
+    
+    if (jdReq) {
+        const icon = jdReq.querySelector(".req-icon");
+        const statusText = jdReq.querySelector(".req-status-text");
+        
+        if (jdText.length > 50) {
+            if (icon) {
+                icon.setAttribute("class", "req-icon status-ok");
+                icon.setAttribute("data-lucide", "check-circle");
+            }
+            if (statusText) {
+                statusText.textContent = "Provided";
+                statusText.style.color = "var(--success)";
+            }
+            isJdOk = true;
+        } else {
+            if (icon) {
+                icon.setAttribute("class", "req-icon status-waiting");
+                icon.setAttribute("data-lucide", "circle-dashed");
+            }
+            if (statusText) {
+                statusText.textContent = "Missing";
+                statusText.style.color = "var(--text-muted)";
+            }
+        }
+    }
+    
+    if (generateBtn) {
+        generateBtn.disabled = !(isMasterOk && isJdOk);
+    }
+    
+    refreshIcons();
+}
+
+async function analyzeJobDescriptionText(jdText) {
+    if (!jdText || jdText.length < 100) return;
+    
+    const skillsCard = document.getElementById("tailor-skills-card");
+    const techList = document.getElementById("detected-tech-skills");
+    const keywordsList = document.getElementById("detected-keywords");
+    
+    if (!skillsCard || !techList || !keywordsList) return;
+    
+    try {
+        const response = await fetch("/api/analyze-job", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_description: jdText })
+        });
+        
+        if (!response.ok) throw new Error("Analysis failed");
+        const result = await response.json();
+        
+        if (result.status === "ok" && (result.skills.length > 0 || result.keywords.length > 0)) {
+            techList.innerHTML = "";
+            keywordsList.innerHTML = "";
+            
+            result.skills.forEach(skill => {
+                const badge = document.createElement("span");
+                badge.className = "skill-badge";
+                badge.textContent = skill;
+                techList.appendChild(badge);
+            });
+            if (result.skills.length === 0) {
+                techList.innerHTML = `<span style="color: var(--text-muted); font-size: 0.85rem;">None detected</span>`;
+            }
+            
+            result.keywords.forEach(kw => {
+                const badge = document.createElement("span");
+                badge.className = "skill-badge";
+                badge.textContent = kw;
+                keywordsList.appendChild(badge);
+            });
+            if (result.keywords.length === 0) {
+                keywordsList.innerHTML = `<span style="color: var(--text-muted); font-size: 0.85rem;">None detected</span>`;
+            }
+            
+            skillsCard.style.display = "block";
+            refreshIcons();
+        }
+    } catch (err) {
+        console.error("Lightweight job description analysis error:", err);
+    }
+}
+

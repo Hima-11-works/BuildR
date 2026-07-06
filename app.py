@@ -48,7 +48,7 @@ from services.resume_library import (
 # secrets out of source code.
 load_dotenv()
 
-from services.ai_service import tailor_resume, parse_resume_text
+from services.ai_service import tailor_resume, parse_resume_text, analyze_job_description
 from services.scraper_service import fetch_job_description, ScrapingError
 from services.parser_service import extract_text_from_pdf, extract_text_from_docx
 
@@ -353,6 +353,63 @@ def api_generate_master_resume():
 #     even touching LaTeX.
 #   • The template can change without rewriting the AI prompt.
 # ──────────────────────────────────────────────────────────────
+
+@app.route("/api/scrape-job", methods=["POST"])
+def api_scrape_job():
+    """
+    Scrape a job posting URL and return the raw extracted text.
+    Handles scraping failures gracefully with custom friendly instructions.
+    """
+    data = request.get_json()
+    if not data or "url" not in data:
+        return jsonify({"error": "Missing URL parameter."}), 400
+        
+    url = data["url"].strip()
+    try:
+        scraped_text = fetch_job_description(url)
+        return jsonify({
+            "status": "ok",
+            "job_description": scraped_text
+        })
+    except ScrapingError as e:
+        return jsonify({
+            "error": "This website doesn't allow automated extraction. Please copy and paste the job description below instead."
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "error": "This website doesn't allow automated extraction. Please copy and paste the job description below instead."
+        }), 400
+
+
+@app.route("/api/analyze-job", methods=["POST"])
+def api_analyze_job():
+    """
+    Perform a lightweight analysis of the job description text using Gemini to extract critical skills and keywords.
+    """
+    data = request.get_json()
+    if not data or "job_description" not in data:
+        return jsonify({"error": "Missing job description."}), 400
+        
+    job_description = data["job_description"].strip()
+    if not job_description:
+        return jsonify({"error": "Job description is empty."}), 400
+        
+    try:
+        analysis = analyze_job_description(job_description)
+        return jsonify({
+            "status": "ok",
+            "skills": analysis.skills,
+            "keywords": analysis.keywords
+        })
+    except Exception as e:
+        print(f"Error analyzing job description: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "skills": [],
+            "keywords": []
+        }), 500
+
 
 @app.route("/api/resume/tailored", methods=["POST"])
 def api_generate_tailored_resume():
