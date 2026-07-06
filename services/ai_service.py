@@ -124,6 +124,109 @@ def _as_key(*parts: str | None) -> tuple[str, ...]:
     return tuple(_plain(part).casefold() for part in parts)
 
 
+def _canon_skill(value: str | None) -> str:
+    """
+    Canonical form of a skill / technology name used for *fuzzy* comparison.
+
+    Goal
+    ----
+    Allow harmless wording variations through the anti-hallucination
+    validator while still rejecting genuinely invented skills.
+
+    Allowed matches
+    - "LLMs"        <-> "LLMsLLMs"      (whole-string repetition pattern)
+    - "React.js"    <-> "ReactJS"       (punctuation dropped, single token)
+    - "Node.js"     <-> "NodeJS"        (punctuation dropped)
+    - "CI/CD"       <-> "CICD"          (punctuation dropped)
+    - "PostgreSQL"  -> "postgresql"     (single canonical form, no aliasing)
+    - "loooong"     -> "long"           (3+ character-run collapsed)
+
+    The function NEVER invents matches across distinct technologies
+    (PostgreSQL vs Postgres, React vs Vue are NOT matched here).
+
+    Strategy
+    --------
+    1. Lowercase, strip whitespace.
+    2. Remove every non-alphanumeric character (punctuation, slashes,
+       hyphens, dots, plus, hash, etc.).
+    3. Collapse only runs of 3 or more duplicate characters so that
+       "loooong" -> "long" but "hello" stays "hello".
+    4. Detect the smallest string period: if the whole string is a
+       repetition of a shorter substring (e.g. "llmsllms" = "llms"
+       repeated twice), return that shorter substring.
+    """
+    if not value:
+        return ""
+    import re as _re
+    s = value.strip().casefold()
+    # Strip every non-alphanumeric char.
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    if not s:
+        return ""
+    # Collapse only runs of 3+ identical chars (handles "loooong" -> "long"
+    # without touching legitimate double letters like the "ll" in "hello").
+    s = _re.sub(r"(.)\1{2,}", r"\1", s)
+    # Whole-string period detection: if `s` is a repetition of a shorter
+    # substring, return that shorter substring.
+    n = len(s)
+    for period in range(1, n // 2 + 1):
+        if n % period == 0 and s[:period] * (n // period) == s:
+            return s[:period]
+    return s
+
+
+def _skills_equivalent(a: str | None, b: str | None) -> bool:
+    """
+    Return True if two skill strings are equivalent for the purposes of
+    anti-hallucination validation.
+
+    Two skills are considered equivalent if either canonical form equals
+    the other. The canonical form is intentionally strict: it collapses
+    case, whitespace, punctuation, and obvious repeated-character typos
+    but does NOT alias distinct technologies.
+    """
+    return _canon_skill(a) != "" and _canon_skill(a) == _canon_skill(b)
+
+
+def _is_canonical_member(canon: str, canon_set: set[str]) -> bool:
+    """
+    Check whether a canonical-form skill is a member of a set of
+    canonical-form skills.
+
+    Membership rule: returns True if `canon` exactly equals any element of
+    `canon_set`, OR if `canon` is a contiguous repetition of an element
+    (e.g. "llmsllms" vs "llms"), OR if an element is a contiguous
+    repetition of `canon`.
+
+    This catches obvious duplicate-token typos like "LLMsLLMs" vs "LLMs"
+    without inventing matches across unrelated technologies.
+    """
+    if not canon or not canon_set:
+        return False
+    if canon in canon_set:
+        return True
+    # Check repetition patterns: "llmsllms" is "llms" repeated twice.
+    # Detect smallest period of `canon` and check whether repeating it
+    # reconstructs the original.
+    n = len(canon)
+    for period in range(1, n // 2 + 1):
+        if n % period == 0 and canon[:period] * (n // period) == canon:
+            if canon[:period] in canon_set:
+                return True
+    # And the other direction: an existing canonical skill might itself be
+    # a repetition of `canon`.
+    for member in canon_set:
+        m = len(member)
+        if m % len(canon) == 0 and len(canon) * (m // len(canon)) == member:
+            return True
+        # Also: check the period of `member` and compare to `canon`.
+        for period in range(1, m // 2 + 1):
+            if m % period == 0 and member[:period] * (m // period) == member:
+                if member[:period] == canon:
+                    return True
+    return False
+
+
 def _validate_tailored_output(profile: Profile, tailored: TailoredProfile) -> None:
     """
     Check that Gemini selected from the real profile rather than inventing
@@ -152,10 +255,15 @@ def _validate_tailored_output(profile: Profile, tailored: TailoredProfile) -> No
         original = original_experience.get(key)
         if original is None:
             raise ValueError(f"Gemini returned an experience that is not in the profile: {exp.company} - {exp.role}")
-        original_tech = {_plain(tech).casefold() for tech in original.technologies}
-        invented_tech = [tech for tech in exp.technologies if _plain(tech).casefold() not in original_tech]
+        original_tech = {_canon_skill(tech) for tech in original.technologies if _canon_skill(tech)}
+        invented_tech = [
+            tech for tech in exp.technologies
+            if _canon_skill(tech) and not _is_canonical_member(_canon_skill(tech), original_tech)
+        ]
         if invented_tech:
-            raise ValueError(f"Gemini added technologies not present in {exp.company}: {', '.join(invented_tech)}")
+            raise ValueError(
+                f"Gemini added technologies not present in {exp.company}: {', '.join(invented_tech)}"
+            )
 
     original_projects = {
         _plain(project.name).casefold(): project
@@ -167,26 +275,45 @@ def _validate_tailored_output(profile: Profile, tailored: TailoredProfile) -> No
             raise ValueError(f"Gemini returned a project that is not in the profile: {project.name}")
         if _plain(project.link) != _plain(original.link):
             raise ValueError(f"Gemini changed the project link for: {project.name}")
-        original_tech = {_plain(tech).casefold() for tech in original.technologies}
-        invented_tech = [tech for tech in project.technologies if _plain(tech).casefold() not in original_tech]
+        original_tech = {_canon_skill(tech) for tech in original.technologies if _canon_skill(tech)}
+        invented_tech = [
+            tech for tech in project.technologies
+            if _canon_skill(tech) and not _is_canonical_member(_canon_skill(tech), original_tech)
+        ]
         if invented_tech:
-            raise ValueError(f"Gemini added technologies not present in {project.name}: {', '.join(invented_tech)}")
+            raise ValueError(
+                f"Gemini added technologies not present in {project.name}: {', '.join(invented_tech)}"
+            )
 
+    # Build canonical lookup of category -> set(canonical_skill_name).
+    # This lets the validator accept harmless wording variants (e.g. React.js vs React,
+    # LLMs vs LLMsLLMs) while still rejecting genuinely new skills that have no
+    # canonical match in the master profile.
     original_skills = {
-        category.casefold(): {skill.casefold() for skill in skills}
+        _canon_skill(category): {_canon_skill(s) for s in skills if _canon_skill(s)}
         for category, skills in profile.skills.categories.items()
     }
     for skill_category in tailored.skills.categories:
         category = skill_category.category
-        original_category = original_skills.get(category.casefold())
+        canon_category = _canon_skill(category)
+        original_category = original_skills.get(canon_category)
         if original_category is None:
-            raise ValueError(f"Gemini added a skill category not present in the profile: {category}")
+            # Fall back to case-insensitive equality for cosmetic differences in
+            # the category name itself (e.g. "Programming Languages" vs
+            # "Programming language").
+            original_category = original_skills.get(_plain(category).casefold())
+        if original_category is None:
+            raise ValueError(
+                f"Gemini added a skill category not present in the profile: {category}"
+            )
         invented_skills = [
             skill for skill in skill_category.skills
-            if skill.casefold() not in original_category
+            if _canon_skill(skill) and not _is_canonical_member(_canon_skill(skill), original_category)
         ]
         if invented_skills:
-            raise ValueError(f"Gemini added skills not present in {category}: {', '.join(invented_skills)}")
+            raise ValueError(
+                f"Gemini added skills not present in {category}: {', '.join(invented_skills)}"
+            )
 
 
 # ── The system prompt ────────────────────────────────────────
@@ -402,4 +529,221 @@ def analyze_job_description(job_description: str) -> JobAnalysis:
     )
 
     return response.parsed
+
+
+# ── Tailor Resume Workspace Helpers ───────────────────────────
+from models.tailoring_result import TailoringResult
+
+def tailor_resume_v2(profile: Profile, job_description: str, preferences: dict) -> TailoringResult:
+    """
+    Initial tailoring from the setup inputs (preferences like style, focus areas, job level).
+    Returns a structured TailoringResult.
+    """
+    profile_json = profile.model_dump_json(indent=2)
+    style = preferences.get("style", "balanced")
+    focus_areas = preferences.get("focus_areas", ["skills", "projects", "experience", "summary"])
+    job_level = preferences.get("job_level", "entry")
+    
+    # Customize the system instruction based on style, focus areas, and job level
+    style_guideline = ""
+    if style == "conservative":
+        style_guideline = "Style preference: Conservative (Minimal AI rephrasing; preserve original bullet points as much as possible, focusing on selecting the most relevant sections)."
+    elif style == "aggressive":
+        style_guideline = "Style preference: Aggressive (Rewrite bullet points heavily to maximize ATS matching and keywords, but remain strictly truthful. Do not invent any metrics or facts)."
+    else:
+        style_guideline = "Style preference: Balanced (Optimize bullet point phrasing to match keywords while carefully preserving the original meanings and facts)."
+        
+    focus_guideline = f"Prioritized Focus Areas: {', '.join(focus_areas)}. Optimize and expand these sections as top priority."
+    tone_guideline = f"Tone / Job Level expectation: {job_level.upper()} level professionals. Use appropriate vocabulary and industry terminology."
+    
+    system_instruction = f"""\
+You are an elite professional resume tailoring assistant.
+
+You will receive:
+1. A candidate's COMPLETE master profile as JSON.
+2. A job description they are applying to.
+
+Your task: Produce a tailored resume by selecting and optimizing content from the profile to match the job description.
+
+ABSOLUTE TRUTHFULNESS RULES (these override every other instruction):
+A. The candidate's Master Resume is the ONLY source of truth. You may ONLY use
+   information that already exists in the master profile.
+B. You are STRICTLY FORBIDDEN from adding ANY of the following, even if they look
+   like obvious "fixes", typos, or improvements:
+      - new skills
+      - new technologies, frameworks, libraries, or tools
+      - new certifications, courses, or awards
+      - new work experiences, internships, or roles
+      - new projects, side projects, or hackathons
+      - new companies, clients, or organizations
+      - new metrics, percentages, numbers, or dollar amounts
+      - new links, GitHub repos, or portfolio URLs
+   Every skill, technology, certification, project, experience, company, and
+   link in the tailored profile MUST be a verbatim member of an existing
+   category or record in the master profile. Do NOT silently "clean up", "fix
+   the casing of", "expand the acronym of", or otherwise rename skill strings.
+   If the master profile says "LLMsLLMs", the tailored profile must also say
+   "LLMsLLMs". Treat the master data as immutable.
+C. Keywords that the job description asks for but that are NOT supported by
+   the master profile MUST go ONLY into the `keywords_not_included_list`
+   field. They MUST NEVER be inserted into the tailored profile.
+D. You may REWRITE wording of bullet points (action verbs, phrasing, emphasis)
+   as long as the underlying facts, metrics, technologies, and entities stay
+   truthful to the master profile.
+E. You may REORDER sections, projects, and experiences so the most relevant
+   ones appear first. Ordering changes are allowed.
+F. You may EMPHASIZE existing experience by re-surfacing it more prominently
+   (e.g. moving a relevant project up) but you may NOT fabricate new
+   experiences to fill a gap.
+
+STYLE GUIDELINES:
+4. {style_guideline}
+5. {focus_guideline}
+6. {tone_guideline}
+
+REQUIRED OUTPUT SCHEMA (TailoringResult):
+- profile: The tailored profile content. Must contain ONLY entries (skills,
+  experiences, projects, certifications, links) that already exist in the
+  master profile, with rewritten bullets and reordered sections.
+- suggestions: Expanded list of recommendations / modifications made. Provide a
+  title and detailed transparent explanation explaining WHY you made each
+  suggestion based on the job description.
+- keywords_not_included_list: A list of key skill terms or keywords requested
+  in the job description that could not be added because they are missing
+  from the candidate's master profile. (Never fabricate experience to include
+  them.) This list is the ONLY place where job-description skills that the
+  candidate does not have may appear.
+- stats: Factual optimization statistics:
+    - keywords_added: count of job description keywords successfully added
+      (i.e. keywords from the JD that already existed in the master profile
+      and were emphasized or surfaced in the tailored profile).
+    - bullets_improved: count of bullet points modified.
+    - sections_reordered: count of sections re-ordered or re-grouped.
+    - keywords_not_included: count of job description keywords that were
+      omitted because they are missing from the master resume.
+- insights: Resume analysis insights (key strengths, opportunities for
+  improvement, resume length review, and AI confidence level).
+"""
+
+    user_message = (
+        f"══ CANDIDATE PROFILE (JSON) ══\n"
+        f"{profile_json}\n\n"
+        f"══ JOB DESCRIPTION ══\n"
+        f"{job_description}\n\n"
+        f"Now produce the tailored resume JSON structured exactly as TailoringResult."
+    )
+
+    response = _get_client().models.generate_content(
+        model=_MODEL,
+        contents=user_message,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=TailoringResult,
+            temperature=0.2,
+        ),
+    )
+
+    result: TailoringResult = response.parsed
+    _validate_tailored_output(profile, result.profile)
+    return result
+
+
+def chat_tailor_resume(
+    master_profile: Profile,
+    active_profile: Profile,
+    job_description: str,
+    message: str,
+    chat_history: list[dict[str, str]]
+) -> TailoringResult:
+    """
+    Applies a user instruction (chat prompt) to refine the active tailored profile.
+    Uses the master profile as reference to prevent fabrication.
+    """
+    master_json = master_profile.model_dump_json(indent=2)
+    active_json = active_profile.model_dump_json(indent=2)
+    
+    # Format chat history for context
+    history_str = ""
+    for turn in chat_history:
+        role = "User" if turn["role"] == "user" else "AI Assistant"
+        history_str += f"{role}: {turn['content']}\n"
+        
+    system_instruction = """\
+You are an elite technical resume editor assistant collaborating interactively with a candidate.
+
+Your goal is to refine the candidate's CURRENT tailored resume based on their custom instructions (chat message).
+
+ABSOLUTE TRUTHFULNESS RULES (these override every other instruction):
+A. The ORIGINAL MASTER RESUME is the single source of truth. Every skill,
+   technology, certification, project, experience, company, and link in the
+   tailored profile MUST be a verbatim member of an existing entry in the
+   master profile. Do NOT rename, "fix", expand acronyms of, or otherwise
+   mutate skill strings.
+B. You are STRICTLY FORBIDDEN from adding ANY of the following, even when a
+   user chat instruction might encourage it:
+      - new skills, technologies, frameworks, libraries, or tools
+      - new certifications, courses, or awards
+      - new work experiences, internships, or roles
+      - new projects, side projects, or hackathons
+      - new companies, clients, or organizations
+      - new metrics, percentages, numbers, or dollar amounts
+      - new links, GitHub repos, or portfolio URLs
+C. If the user's instruction implies adding something that does not exist in
+   the master profile, DO NOT add it. Instead, list it in
+   `keywords_not_included_list` and explain in the suggestions that the
+   requested item is not supported by the master resume.
+D. You may REWRITE wording of bullets (action verbs, phrasing, emphasis) and
+   REORDER sections to satisfy the user's request, but you may NOT fabricate.
+E. Be transparent: in `suggestions`, outline what changes were made in
+   response to this instruction and WHY, including any items you refused to
+   add because they are not supported by the master profile.
+
+REQUIRED OUTPUT SCHEMA (TailoringResult):
+- profile: The updated tailored profile. All entries must still trace back
+  to the master profile verbatim (skill strings, technologies, links,
+  company names, dates).
+- suggestions: Specific details of what changed in this turn and WHY,
+  including any refused additions.
+- keywords_not_included_list: Skills/keywords the user asked for that the
+  candidate does not have in the master profile.
+- stats: Factual statistics after these modifications.
+- insights: Updated resume analysis insights (strengths, opportunities,
+  length, confidence).
+"""
+
+    contents = f"""\
+══ JOB DESCRIPTION ══
+{job_description}
+
+══ ORIGINAL MASTER RESUME ══
+{master_json}
+
+══ CURRENT TAILORED RESUME DRAFT ══
+{active_json}
+
+══ RECENT CHAT HISTORY ══
+{history_str}
+
+══ NEW USER REFINEMENT REQUEST ══
+{message}
+
+Please modify the CURRENT TAILORED RESUME DRAFT to satisfy the request. Ensure all updates remain 100% truthful to the ORIGINAL MASTER RESUME facts.
+"""
+
+    response = _get_client().models.generate_content(
+        model=_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=TailoringResult,
+            temperature=0.2,
+        ),
+    )
+
+    result: TailoringResult = response.parsed
+    _validate_tailored_output(master_profile, result.profile)
+    return result
+
 

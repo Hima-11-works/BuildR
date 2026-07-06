@@ -292,20 +292,48 @@ function router() {
         document.body.classList.remove("builder-active");
     }
 
+    if (hash === "#tailor-workspace") {
+        document.body.classList.add("workspace-active");
+        initializeTailoringWorkspace();
+    } else {
+        document.body.classList.remove("workspace-active");
+    }
+
     // Load setup data if tailoring page is opened
     if (hash === "#tailor") {
-        // Auto-load contact details from cached profile
-        if (cachedProfile) {
-            const pi = cachedProfile.personal_info || {};
+        // Always autofill contact details from the master resume.
+        // This is the SOURCE OF TRUTH for name / email / phone.
+        // We only fill empty fields so the user can override per-application
+        // without losing their edits.
+        const autofillContactFromMaster = () => {
+            const pi = (cachedProfile && cachedProfile.personal_info) || {};
             const nameField = document.getElementById("tailor-pi-name");
             const emailField = document.getElementById("tailor-pi-email");
             const phoneField = document.getElementById("tailor-pi-phone");
-            
-            if (nameField && !nameField.value.trim()) nameField.value = pi.name || "";
-            if (emailField && !emailField.value.trim()) emailField.value = pi.email || "";
-            if (phoneField && !phoneField.value.trim()) phoneField.value = pi.phone || "";
+            if (nameField && !nameField.value.trim() && pi.name) nameField.value = pi.name;
+            if (emailField && !emailField.value.trim() && pi.email) emailField.value = pi.email;
+            if (phoneField && !phoneField.value.trim() && (pi.phone || ""))
+                phoneField.value = pi.phone || "";
+        };
+
+        if (cachedProfile) {
+            autofillContactFromMaster();
+        } else {
+            // Race-safe: the initial DOMContentLoaded loadProfile() fetch
+            // may still be in flight when the user navigates here. Kick
+            // off a fetch in the background and autofill as soon as it
+            // arrives.
+            fetch("/api/profile")
+                .then(r => r.ok ? r.json() : null)
+                .then(profile => {
+                    if (!profile || profile.error) return;
+                    cachedProfile = profile;
+                    hasValidMasterResume = !!profile.has_valid_resume;
+                    autofillContactFromMaster();
+                })
+                .catch(() => { /* silent: user can fill manually */ });
         }
-        
+
         // Restore setup form state from sessionStorage
         try {
             const savedState = sessionStorage.getItem("tailorSetupState");
@@ -322,11 +350,18 @@ function router() {
                     const jdUrl = document.getElementById("tailor-jd-url");
                     if (jdUrl && !jdUrl.value.trim()) jdUrl.value = state.job_url;
                 }
+                // Only fall back to sessionStorage contact info if the
+                // field is still empty AFTER the master-resume autofill.
+                // This prevents a previously saved empty contact_info from
+                // wiping the master values on subsequent visits.
                 if (state.contact_info) {
                     const c = state.contact_info;
-                    if (c.name) document.getElementById("tailor-pi-name").value = c.name;
-                    if (c.email) document.getElementById("tailor-pi-email").value = c.email;
-                    if (c.phone) document.getElementById("tailor-pi-phone").value = c.phone;
+                    const nameField = document.getElementById("tailor-pi-name");
+                    const emailField = document.getElementById("tailor-pi-email");
+                    const phoneField = document.getElementById("tailor-pi-phone");
+                    if (nameField && !nameField.value.trim() && c.name) nameField.value = c.name;
+                    if (emailField && !emailField.value.trim() && c.email) emailField.value = c.email;
+                    if (phoneField && !phoneField.value.trim() && c.phone) phoneField.value = c.phone;
                 }
                 if (state.preferences) {
                     const p = state.preferences;
@@ -1984,5 +2019,618 @@ async function analyzeJobDescriptionText(jdText) {
     } catch (err) {
         console.error("Lightweight job description analysis error:", err);
     }
+}
+
+
+// ── AI Resume Workspace View Controllers ──────────────────────
+let workspaceSessionId = null;
+let iframeZoom = 1.0;
+let workspaceActiveSnapshotId = null;
+let isEventsWired = false;
+
+/**
+ * Custom themed modal for naming a snapshot.
+ * Resolves with the entered string, or null if cancelled.
+ */
+function openSnapshotNameModal() {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById("snapshot-modal");
+        if (!overlay) {
+            // Fallback if modal missing
+            const fallback = window.prompt("Enter a label for this snapshot (e.g. 'Stronger Projects'):");
+            resolve(fallback);
+            return;
+        }
+        const input = document.getElementById("snapshot-modal-input");
+        const confirmBtn = document.getElementById("snapshot-modal-confirm");
+        const cancelBtn = document.getElementById("snapshot-modal-cancel");
+        const closeBtn = document.getElementById("snapshot-modal-close");
+        const card = overlay.querySelector(".modal-card");
+
+        // Reset previous state
+        input.value = "";
+        overlay.classList.add("active");
+        // Ensure icons inside the modal render correctly
+        refreshIcons();
+        setTimeout(() => {
+            refreshIcons();
+            input.focus();
+        }, 50);
+
+        const close = (value) => {
+            overlay.classList.remove("active");
+            confirmBtn.removeEventListener("click", onConfirm);
+            cancelBtn.removeEventListener("click", onCancel);
+            closeBtn.removeEventListener("click", onCancel);
+            overlay.removeEventListener("click", onOverlay);
+            input.removeEventListener("keydown", onKey);
+            resolve(value);
+        };
+        const onConfirm = () => close(input.value.trim() || null);
+        const onCancel = () => close(null);
+        const onOverlay = (e) => { if (e.target === overlay) onCancel(); };
+        const onKey = (e) => {
+            if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
+            else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        };
+
+        confirmBtn.addEventListener("click", onConfirm);
+        cancelBtn.addEventListener("click", onCancel);
+        closeBtn.addEventListener("click", onCancel);
+        overlay.addEventListener("click", onOverlay);
+        input.addEventListener("keydown", onKey);
+    });
+}
+
+function setStepState(stepId, state) {
+    const stepEl = document.getElementById(stepId);
+    if (!stepEl) return;
+    
+    const icon = stepEl.querySelector(".progress-icon");
+    if (!icon) return;
+    
+    stepEl.classList.remove("active", "done");
+    
+    if (state === "waiting") {
+        icon.setAttribute("class", "progress-icon step-waiting");
+        icon.setAttribute("data-lucide", "circle-dashed");
+    } else if (state === "active") {
+        stepEl.classList.add("active");
+        icon.setAttribute("class", "progress-icon step-active");
+        icon.setAttribute("data-lucide", "loader");
+    } else if (state === "done") {
+        stepEl.classList.add("done");
+        icon.setAttribute("class", "progress-icon step-done");
+        icon.setAttribute("data-lucide", "check-circle");
+    }
+    refreshIcons();
+}
+
+function animateLoadingSteps() {
+    return new Promise(resolve => {
+        let step = 0;
+        const steps = [
+            "step-read-master",
+            "step-understand-jd",
+            "step-id-keywords",
+            "step-optimize-res",
+            "step-build-prev"
+        ];
+        
+        // Reset all steps to waiting
+        steps.forEach(s => setStepState(s, "waiting"));
+        
+        const nextStep = () => {
+            if (step > 0) {
+                setStepState(steps[step - 1], "done");
+            }
+            if (step < steps.length) {
+                setStepState(steps[step], "active");
+                step++;
+                setTimeout(nextStep, 700);
+            } else {
+                resolve();
+            }
+        };
+        nextStep();
+    });
+}
+
+async function initializeTailoringWorkspace() {
+    const setupStateStr = sessionStorage.getItem("tailorSetupState");
+    
+    // If no setup parameters in session storage and no active session id, go back to setup
+    if (!setupStateStr && !workspaceSessionId) {
+        window.location.hash = "#tailor";
+        return;
+    }
+    
+    // Wire up events once
+    setupWorkspaceEventsOnce();
+    
+    if (setupStateStr) {
+        // Clear it so it doesn't trigger on every hash router check
+        sessionStorage.removeItem("tailorSetupState");
+        
+        const setupState = JSON.parse(setupStateStr);
+        
+        // Show Stage 1 Loading overlay
+        document.getElementById("workspace-loading").style.display = "flex";
+        document.getElementById("workspace-content").style.display = "none";
+        document.getElementById("workspace-bottom-bar").style.display = "none";
+        
+        // Kick off animations and AJAX in parallel
+        const animPromise = animateLoadingSteps();
+        
+        let wsData = null;
+        let wsError = null;
+        
+        try {
+            const response = await fetch("/api/tailor/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(setupState)
+            });
+            
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || "Failed to customize resume.");
+            }
+            wsData = await response.json();
+        } catch (err) {
+            wsError = err.message;
+        }
+        
+        // Wait for sequencer to finish
+        await animPromise;
+        
+        if (wsError) {
+            showToast(wsError, "error");
+            window.location.hash = "#tailor";
+            return;
+        }
+        
+        // Initialize state variables
+        workspaceSessionId = wsData.session_id;
+        workspaceActiveSnapshotId = null;
+        
+        // Render workspace content
+        renderWorkspaceData(wsData);
+        
+        // Hide Stage 1 Loading and reveal Stage 2
+        document.getElementById("workspace-loading").style.display = "none";
+        document.getElementById("workspace-content").style.display = "flex";
+        document.getElementById("workspace-bottom-bar").style.display = "flex";
+        
+        // Initialize chat history with welcome message
+        initChatHistory();
+        
+        // Reset snapshot dropdown
+        updateSnapshotDropdown([]);
+        
+        showToast("Tailored resume generated!", "success");
+    }
+}
+
+function renderWorkspaceData(data) {
+    // 1. Update stats
+    document.getElementById("stat-kw-added").textContent = data.stats.keywords_added;
+    document.getElementById("stat-bullets-improved").textContent = data.stats.bullets_improved;
+    document.getElementById("stat-sections-reordered").textContent = data.stats.sections_reordered;
+    document.getElementById("stat-kw-missing").textContent = data.stats.keywords_not_included;
+    
+    // 2. Expandable Suggestions Accordion
+    const suggestionsList = document.getElementById("ws-suggestions-list");
+    suggestionsList.innerHTML = "";
+    if (data.suggestions.length === 0) {
+        suggestionsList.innerHTML = `<p style="font-size: 0.85rem; color: var(--text-muted); padding: var(--space-sm) 0;">No suggestions needed. The resume is fully aligned!</p>`;
+    } else {
+        data.suggestions.forEach(s => {
+            const item = document.createElement("div");
+            item.className = "suggestion-item";
+            item.innerHTML = `
+                <button class="suggestion-header" type="button">
+                    <div>
+                        <span class="suggestion-badge">${escapeHtml(s.section)}</span>
+                        <span>${escapeHtml(s.title)}</span>
+                    </div>
+                    <i data-lucide="chevron-down" class="suggestion-chevron"></i>
+                </button>
+                <div class="suggestion-content">
+                    <p>${escapeHtml(s.explanation)}</p>
+                </div>
+            `;
+            
+            // Toggle open on click
+            item.querySelector(".suggestion-header").addEventListener("click", () => {
+                const wasOpen = item.classList.contains("open");
+                // Close others
+                suggestionsList.querySelectorAll(".suggestion-item").forEach(el => el.classList.remove("open"));
+                if (!wasOpen) {
+                    item.classList.add("open");
+                }
+            });
+            
+            suggestionsList.appendChild(item);
+        });
+    }
+    
+    // 3. Keywords Not Included Badges
+    const missingBadges = document.getElementById("ws-missing-badges");
+    missingBadges.innerHTML = "";
+    if (data.keywords_not_included_list.length === 0) {
+        missingBadges.innerHTML = `<span style="font-size: 0.85rem; color: var(--text-muted);">None</span>`;
+    } else {
+        data.keywords_not_included_list.forEach(skill => {
+            const badge = document.createElement("span");
+            badge.className = "skill-badge";
+            badge.style.backgroundColor = "var(--bg-surface)";
+            badge.style.border = "1px solid var(--warning)";
+            badge.style.color = "var(--warning)";
+            badge.textContent = skill;
+            missingBadges.appendChild(badge);
+        });
+    }
+    
+    // 4. Resume Insights Card
+    document.getElementById("insight-confidence").textContent = data.insights.ai_confidence;
+    document.getElementById("insight-length").textContent = data.insights.resume_length;
+    
+    // Insights lists
+    const strengthsList = document.getElementById("insight-strengths-list");
+    strengthsList.innerHTML = "";
+    if (data.insights.strengths.length === 0) {
+        const li = document.createElement("li");
+        li.className = "empty-insight";
+        li.textContent = "No additional strengths identified.";
+        strengthsList.appendChild(li);
+    } else {
+        data.insights.strengths.forEach(s => {
+            const li = document.createElement("li");
+            li.textContent = s;
+            strengthsList.appendChild(li);
+        });
+    }
+
+    const oppsList = document.getElementById("insight-opps-list");
+    oppsList.innerHTML = "";
+    if (data.insights.opportunities.length === 0) {
+        const li = document.createElement("li");
+        li.className = "empty-insight";
+        li.textContent = "No further opportunities flagged.";
+        oppsList.appendChild(li);
+    } else {
+        data.insights.opportunities.forEach(o => {
+            const li = document.createElement("li");
+            li.textContent = o;
+            oppsList.appendChild(li);
+        });
+    }
+    
+    // 5. Update Preview PDF IFrame
+    const versionType = workspaceActiveSnapshotId ? "snapshot" : "draft";
+    const versionId = workspaceActiveSnapshotId ? workspaceActiveSnapshotId : "latest";
+    const iframe = document.getElementById("ws-pdf-iframe");
+    iframe.src = `/api/tailor/preview/${workspaceSessionId}/${versionType}/${versionId}?t=${Date.now()}`;
+    
+    // Apply current zoom
+    applyZoom();
+    refreshIcons();
+}
+
+function initChatHistory() {
+    const historyBox = document.getElementById("ws-chat-history");
+    historyBox.innerHTML = `
+        <div class="chat-message assistant">
+            Hi! I've completed the initial resume tailoring according to your target job. 
+            Review the suggestions and insights above, or ask me to make specific refinements here!
+        </div>
+    `;
+    historyBox.scrollTop = historyBox.scrollHeight;
+}
+
+async function handleChatSubmit(e) {
+    if (e) e.preventDefault();
+    
+    const input = document.getElementById("ws-chat-input");
+    const msg = input.value.trim();
+    if (!msg) return;
+    
+    input.value = "";
+    input.disabled = true;
+    const sendBtn = document.getElementById("ws-chat-send");
+    sendBtn.disabled = true;
+    
+    const historyBox = document.getElementById("ws-chat-history");
+    
+    // Append User Bubble
+    const userMsg = document.createElement("div");
+    userMsg.className = "chat-message user";
+    userMsg.textContent = msg;
+    historyBox.appendChild(userMsg);
+    historyBox.scrollTop = historyBox.scrollHeight;
+    
+    // Append Assistant Loader Bubble
+    const loaderMsg = document.createElement("div");
+    loaderMsg.className = "chat-message assistant loader-msg";
+    loaderMsg.innerHTML = `
+        <div class="pulsing-bubble">
+            <div class="pulse-dot"></div>
+            <div class="pulse-dot"></div>
+            <div class="pulse-dot"></div>
+        </div>
+    `;
+    historyBox.appendChild(loaderMsg);
+    historyBox.scrollTop = historyBox.scrollHeight;
+    
+    try {
+        const response = await fetch("/api/tailor/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                session_id: workspaceSessionId,
+                message: msg
+            })
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || "Failed to update draft.");
+        }
+        
+        const data = await response.json();
+        
+        // Remove loader bubble
+        loaderMsg.remove();
+        
+        // Reset the active snapshot since draft is now revised
+        workspaceActiveSnapshotId = null;
+        document.getElementById("ws-dropdown-snapshots").value = "";
+        
+        // Append Assistant Explanation bubble
+        const assistantMsg = document.createElement("div");
+        assistantMsg.className = "chat-message assistant";
+        
+        if (data.suggestions.length > 0) {
+            const intro = document.createElement("div");
+            intro.className = "chat-intro";
+            intro.textContent = "Done! Here is what I changed and why:";
+            assistantMsg.appendChild(intro);
+
+            const list = document.createElement("ul");
+            list.className = "chat-suggestions-list";
+            data.suggestions.forEach(s => {
+                const li = document.createElement("li");
+                const titleEl = document.createElement("strong");
+                titleEl.textContent = s.title + ": ";
+                const explEl = document.createElement("span");
+                explEl.textContent = s.explanation;
+                li.appendChild(titleEl);
+                li.appendChild(explEl);
+                list.appendChild(li);
+            });
+            assistantMsg.appendChild(list);
+        } else {
+            assistantMsg.textContent = "I've revised the resume preview based on your instructions.";
+        }
+        
+        historyBox.appendChild(assistantMsg);
+        historyBox.scrollTop = historyBox.scrollHeight;
+        
+        // Re-render data
+        renderWorkspaceData(data);
+        showToast("Resume revised successfully!", "success");
+        
+    } catch (err) {
+        loaderMsg.remove();
+        showToast(err.message, "error");
+        
+        const assistantMsg = document.createElement("div");
+        assistantMsg.className = "chat-message assistant";
+        assistantMsg.textContent = "Sorry, I encountered an error while trying to process your request.";
+        historyBox.appendChild(assistantMsg);
+        historyBox.scrollTop = historyBox.scrollHeight;
+    } finally {
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        refreshIcons();
+    }
+}
+
+function applyZoom() {
+    const iframe = document.getElementById("ws-pdf-iframe");
+    const label = document.getElementById("zoom-reset");
+    
+    if (iframe) {
+        iframe.style.transform = `scale(${iframeZoom})`;
+        iframe.style.width = `${100 / iframeZoom}%`;
+        iframe.style.height = `${100 / iframeZoom}%`;
+    }
+    if (label) {
+        label.textContent = `${Math.round(iframeZoom * 100)}%`;
+    }
+}
+
+function updateSnapshotDropdown(snapshots) {
+    const select = document.getElementById("ws-dropdown-snapshots");
+    if (!select) return;
+    
+    select.innerHTML = `<option value="">Restore Snapshot...</option>`;
+    snapshots.forEach(s => {
+        const dateStr = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const option = document.createElement("option");
+        option.value = s.id;
+        option.textContent = `${s.name} (${dateStr})`;
+        select.appendChild(option);
+    });
+    
+    select.value = workspaceActiveSnapshotId || "";
+}
+
+function setupWorkspaceEventsOnce() {
+    if (isEventsWired) return;
+    
+    // Refine with AI Chat Form
+    const chatForm = document.getElementById("ws-chat-form");
+    if (chatForm) {
+        chatForm.addEventListener("submit", handleChatSubmit);
+    }
+    
+    // Prompt Chips click handlers
+    document.querySelectorAll(".prompt-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+            const prompt = chip.dataset.prompt;
+            const input = document.getElementById("ws-chat-input");
+            if (input) {
+                input.value = prompt;
+                handleChatSubmit();
+            }
+        });
+    });
+    
+    // Zoom Controls
+    const btnZoomIn = document.getElementById("zoom-in");
+    const btnZoomOut = document.getElementById("zoom-out");
+    const btnZoomReset = document.getElementById("zoom-reset");
+    
+    if (btnZoomIn) {
+        btnZoomIn.addEventListener("click", () => {
+            iframeZoom = Math.min(1.5, iframeZoom + 0.1);
+            applyZoom();
+        });
+    }
+    
+    if (btnZoomOut) {
+        btnZoomOut.addEventListener("click", () => {
+            iframeZoom = Math.max(0.6, iframeZoom - 0.1);
+            applyZoom();
+        });
+    }
+    
+    if (btnZoomReset) {
+        btnZoomReset.addEventListener("click", () => {
+            iframeZoom = 1.0;
+            applyZoom();
+        });
+    }
+    
+    // Save Snapshot
+    const btnSnapshot = document.getElementById("ws-btn-snapshot");
+    if (btnSnapshot) {
+        btnSnapshot.addEventListener("click", async () => {
+            // Use custom themed modal instead of window.prompt
+            const snapName = await openSnapshotNameModal();
+            if (!snapName || !snapName.trim()) return;
+            
+            try {
+                const response = await fetch("/api/tailor/snapshot", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        session_id: workspaceSessionId,
+                        name: snapName.trim()
+                    })
+                });
+                
+                if (!response.ok) throw new Error("Failed to save snapshot.");
+                const result = await response.json();
+                
+                if (result.status === "ok") {
+                    updateSnapshotDropdown(result.snapshots);
+                    showToast(`Snapshot "${snapName.trim()}" saved!`, "success");
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+            }
+        });
+    }
+    
+    // Snapshot dropdown selection change
+    const snapDropdown = document.getElementById("ws-dropdown-snapshots");
+    if (snapDropdown) {
+        snapDropdown.addEventListener("change", async () => {
+            const snapId = snapDropdown.value;
+            if (!snapId) return;
+            
+            try {
+                const response = await fetch("/api/tailor/restore", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        session_id: workspaceSessionId,
+                        snapshot_id: snapId
+                    })
+                });
+                
+                if (!response.ok) throw new Error("Failed to restore snapshot.");
+                const result = await response.json();
+                
+                if (result.status === "ok") {
+                    workspaceActiveSnapshotId = snapId;
+                    renderWorkspaceData(result);
+                    showToast("Snapshot restored successfully!", "success");
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+                snapDropdown.value = "";
+            }
+        });
+    }
+    
+    // Start Over
+    const btnStartOver = document.getElementById("ws-btn-startover");
+    if (btnStartOver) {
+        btnStartOver.addEventListener("click", (e) => {
+            if (!confirm("Are you sure you want to start over? Unsaved draft changes and snapshots will be deleted.")) {
+                e.preventDefault();
+            }
+        });
+    }
+    
+    // Save to Library
+    const btnSaveLibrary = document.getElementById("ws-btn-save-library");
+    if (btnSaveLibrary) {
+        btnSaveLibrary.addEventListener("click", async () => {
+            btnSaveLibrary.disabled = true;
+            const originalHtml = btnSaveLibrary.innerHTML;
+            btnSaveLibrary.innerHTML = `<span class="loading-spinner" style="width: 12px; height: 12px; border-width: 2px; margin: 0; display: inline-block; vertical-align: middle;"></span> Saving...`;
+            
+            try {
+                const response = await fetch("/api/tailor/save", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: workspaceSessionId })
+                });
+                
+                if (!response.ok) throw new Error("Failed to save resume.");
+                const result = await response.json();
+                
+                if (result.status === "ok") {
+                    showToast("Tailored resume saved to library!", "success");
+                    loadLibrary();
+                    window.location.hash = "#home";
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+            } finally {
+                btnSaveLibrary.disabled = false;
+                btnSaveLibrary.innerHTML = originalHtml;
+                refreshIcons();
+            }
+        });
+    }
+    
+    // Download PDF
+    const btnDownload = document.getElementById("ws-btn-download");
+    if (btnDownload) {
+        btnDownload.addEventListener("click", () => {
+            const versionType = workspaceActiveSnapshotId ? "snapshot" : "draft";
+            const versionId = workspaceActiveSnapshotId ? workspaceActiveSnapshotId : "latest";
+            window.open(`/api/tailor/preview/${workspaceSessionId}/${versionType}/${versionId}`, "_blank");
+        });
+    }
+    
+    isEventsWired = true;
 }
 

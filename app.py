@@ -48,9 +48,13 @@ from services.resume_library import (
 # secrets out of source code.
 load_dotenv()
 
-from services.ai_service import tailor_resume, parse_resume_text, analyze_job_description
+from services.ai_service import (
+    tailor_resume, parse_resume_text, analyze_job_description,
+    tailor_resume_v2, chat_tailor_resume
+)
 from services.scraper_service import fetch_job_description, ScrapingError
 from services.parser_service import extract_text_from_pdf, extract_text_from_docx
+import services.session_service as session_service
 
 # ── Step 2: Create the Flask application instance ────────────
 # Flask(__name__) uses the location of THIS module to determine:
@@ -409,6 +413,282 @@ def api_analyze_job():
             "skills": [],
             "keywords": []
         }), 500
+
+
+@app.route("/api/tailor/start", methods=["POST"])
+def api_tailor_start():
+    """
+    Initializes a tailoring session, calls Gemini for the initial tailoring,
+    and saves it to the session active draft folder.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body must be JSON"}), 400
+        
+    job_description = (data.get("job_description") or "").strip()
+    job_url = (data.get("job_url") or "").strip()
+    preferences = data.get("preferences") or {}
+    contact_info = data.get("contact_info") or {}
+    
+    if not job_description and job_url:
+        try:
+            job_description = fetch_job_description(job_url)
+        except ScrapingError as e:
+            return jsonify({"error": str(e)}), 400
+            
+    if not job_description:
+        return jsonify({"error": "Job description is required."}), 400
+        
+    try:
+        profile = load_profile()
+        if not profile.personal_info.name.strip():
+            return jsonify({"error": "Your profile has no name. Please create a Master Resume first."}), 400
+            
+        # Overwrite contact info with custom overrides from the setup page
+        if contact_info.get("name"):
+            profile.personal_info.name = contact_info["name"].strip()
+        if contact_info.get("email"):
+            profile.personal_info.email = contact_info["email"].strip()
+        if "phone" in contact_info:
+            profile.personal_info.phone = contact_info["phone"].strip() if contact_info["phone"] else None
+            
+        # Create tailoring session folder
+        job_context = {
+            "job_description": job_description,
+            "job_url": job_url,
+            "preferences": preferences,
+            "contact_info": contact_info
+        }
+        session_id = session_service.create_session(profile, job_context)
+        
+        # Call Gemini tailoring v2
+        tailoring_result = tailor_resume_v2(profile, job_description, preferences)
+        
+        # Save to session active draft folder
+        session_service.update_draft(
+            session_id=session_id,
+            profile=tailoring_result.profile.to_profile(),
+            metadata={
+                "suggestions": [s.model_dump() for s in tailoring_result.suggestions],
+                "keywords_not_included_list": tailoring_result.keywords_not_included_list,
+                "stats": tailoring_result.stats.model_dump(),
+                "insights": tailoring_result.insights.model_dump()
+            }
+        )
+        
+        # Return state
+        return jsonify({
+            "status": "ok",
+            "session_id": session_id,
+            "suggestions": [s.model_dump() for s in tailoring_result.suggestions],
+            "keywords_not_included_list": tailoring_result.keywords_not_included_list,
+            "stats": tailoring_result.stats.model_dump(),
+            "insights": tailoring_result.insights.model_dump()
+        })
+        
+    except Exception as e:
+        print(f"Error starting tailoring workspace: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to tailor resume: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/chat", methods=["POST"])
+def api_tailor_chat():
+    """
+    Accepts user instructions, calls Gemini to refine the draft profile,
+    and updates the active draft files.
+    """
+    data = request.get_json()
+    if not data or "session_id" not in data or "message" not in data:
+        return jsonify({"error": "Missing required parameters."}), 400
+        
+    session_id = data["session_id"]
+    message = data["message"].strip()
+    
+    try:
+        master_profile = session_service.load_master_profile(session_id)
+        active_profile, _ = session_service.load_draft(session_id)
+        job_context = session_service.load_job_context(session_id)
+        chat_history = session_service.load_chat_history(session_id)
+        
+        # Call Gemini chat refinement
+        tailoring_result = chat_tailor_resume(
+            master_profile=master_profile,
+            active_profile=active_profile,
+            job_description=job_context["job_description"],
+            message=message,
+            chat_history=chat_history
+        )
+        
+        # Save to chat history
+        chat_history.append({"role": "user", "content": message})
+        chat_history.append({"role": "model", "content": "Updated the resume."})
+        session_service.save_chat_history(session_id, chat_history)
+        
+        # Save revised draft profile & metadata
+        session_service.update_draft(
+            session_id=session_id,
+            profile=tailoring_result.profile.to_profile(),
+            metadata={
+                "suggestions": [s.model_dump() for s in tailoring_result.suggestions],
+                "keywords_not_included_list": tailoring_result.keywords_not_included_list,
+                "stats": tailoring_result.stats.model_dump(),
+                "insights": tailoring_result.insights.model_dump()
+            }
+        )
+        
+        return jsonify({
+            "status": "ok",
+            "suggestions": [s.model_dump() for s in tailoring_result.suggestions],
+            "keywords_not_included_list": tailoring_result.keywords_not_included_list,
+            "stats": tailoring_result.stats.model_dump(),
+            "insights": tailoring_result.insights.model_dump()
+        })
+        
+    except Exception as e:
+        print(f"Error refining resume with chat: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to refine resume: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/snapshot", methods=["POST"])
+def api_tailor_snapshot():
+    """
+    Saves an explicit named snapshot of the current active draft.
+    """
+    data = request.get_json()
+    if not data or "session_id" not in data or "name" not in data:
+        return jsonify({"error": "Missing required parameters."}), 400
+        
+    session_id = data["session_id"]
+    snapshot_name = data["name"].strip()
+    
+    try:
+        snapshot_id = session_service.save_snapshot(session_id, snapshot_name)
+        snapshots = session_service.list_snapshots(session_id)
+        return jsonify({
+            "status": "ok",
+            "snapshot_id": snapshot_id,
+            "snapshots": snapshots
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to save snapshot: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/restore", methods=["POST"])
+def api_tailor_restore():
+    """
+    Overwrites the current active draft with a selected snapshot's data.
+    """
+    data = request.get_json()
+    if not data or "session_id" not in data or "snapshot_id" not in data:
+        return jsonify({"error": "Missing required parameters."}), 400
+        
+    session_id = data["session_id"]
+    snapshot_id = data["snapshot_id"]
+    
+    try:
+        session_service.restore_snapshot(session_id, snapshot_id)
+        _, metadata = session_service.load_draft(session_id)
+        return jsonify({
+            "status": "ok",
+            "suggestions": metadata.get("suggestions", []),
+            "keywords_not_included_list": metadata.get("keywords_not_included_list", []),
+            "stats": metadata.get("stats", {}),
+            "insights": metadata.get("insights", {})
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to restore snapshot: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/save", methods=["POST"])
+def api_tailor_save():
+    """
+    Saves the current active draft profile to the permanent Resume Library.
+    """
+    data = request.get_json()
+    if not data or "session_id" not in data:
+        return jsonify({"error": "Missing session_id parameter."}), 400
+        
+    session_id = data["session_id"]
+    try:
+        profile, _ = session_service.load_draft(session_id)
+        job_context = session_service.load_job_context(session_id)
+        job_description = job_context["job_description"]
+        
+        # Render LaTeX from draft profile
+        tex_string = render_latex(profile)
+        # Compile to PDF
+        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
+        
+        # Extract a filesystem safe label
+        label = job_description[:60].strip()
+        if len(job_description) > 60:
+            label += "…"
+            
+        resume_id = save_resume(
+            tex_string=tex_string,
+            pdf_path=pdf_path,
+            resume_type="tailored",
+            label=label,
+            job_description=job_description
+        )
+        
+        return jsonify({
+            "status": "ok",
+            "id": resume_id,
+            "label": label
+        })
+    except Exception as e:
+        print(f"Error saving tailored resume to library: {str(e)}")
+        return jsonify({"error": f"Failed to save tailored resume: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/preview/<session_id>/<version_type>/<version_id>", methods=["GET"])
+def api_tailor_preview(session_id, version_type, version_id):
+    """
+    Generates the PDF preview on the fly for the active draft or snapshot,
+    meaning we never store intermediate PDF files permanently on disk.
+    """
+    try:
+        profile = None
+        if version_type == "draft":
+            profile, _ = session_service.load_draft(session_id)
+        elif version_type == "snapshot":
+            session_dir = session_service.get_session_dir(session_id)
+            snapshot_path = session_dir / "snapshots" / version_id / "profile.json"
+            if not snapshot_path.exists():
+                return "Snapshot not found", 404
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                profile_data = json.load(f)
+            profile = Profile.model_validate(profile_data)
+        else:
+            return "Invalid preview version type", 400
+            
+        # Compile LaTeX to PDF on-demand inside a temporary directory
+        import tempfile
+        from pathlib import Path as TempPath
+        
+        tex_string = render_latex(profile)
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = TempPath(temp_dir)
+            pdf_filepath = compile_pdf(tex_string, temp_path)
+            
+            # Send file to client
+            return send_file(
+                pdf_filepath,
+                mimetype="application/pdf",
+                as_attachment=False
+            )
+            
+    except Exception as e:
+        print(f"Error compiling on-the-fly preview: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Failed to generate PDF preview: {str(e)}", 500
 
 
 @app.route("/api/resume/tailored", methods=["POST"])
