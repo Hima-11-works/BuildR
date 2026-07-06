@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -360,31 +360,79 @@
                     <h2><i data-lucide="sliders" class="section-icon"></i> 2. Tailoring Preferences</h2>
                 </div>
 
-                <!-- Resume Style Radio Group -->
+                <!-- Resume Style Radio Group (Hidden to preserve existing JS behavior and data model) -->
+                <div class="style-radio-group" style="display: none !important;">
+                    <label class="style-radio-card" id="label-style-conservative">
+                        <input type="radio" name="tailor-style" value="conservative" id="style-conservative">
+                        <div class="radio-card-content">
+                            <span class="radio-card-title">Conservative</span>
+                            <span class="radio-card-desc">Minimal AI rewriting. Focuses primarily on section selection.</span>
+                        </div>
+                    </label>
+                    <label class="style-radio-card active" id="label-style-balanced">
+                        <input type="radio" name="tailor-style" value="balanced" id="style-balanced" checked>
+                        <div class="radio-card-content">
+                            <span class="radio-card-title">Balanced</span>
+                            <span class="radio-card-desc">Optimize bullet phrasing to align with keywords while preserving original meanings.</span>
+                        </div>
+                    </label>
+                    <label class="style-radio-card" id="label-style-aggressive">
+                        <input type="radio" name="tailor-style" value="aggressive" id="style-aggressive">
+                        <div class="radio-card-content">
+                            <span class="radio-card-title">Aggressive</span>
+                            <span class="radio-card-desc">Rewrite bullet points to maximize ATS matching and keywords while remaining strictly truthful.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Resume Style Slider (Interactive 3-position UI) -->
                 <div class="form-group">
                     <label>Resume Style</label>
-                    <div class="style-radio-group">
-                        <label class="style-radio-card" id="label-style-conservative">
-                            <input type="radio" name="tailor-style" value="conservative" id="style-conservative">
-                            <div class="radio-card-content">
-                                <span class="radio-card-title">Conservative</span>
-                                <span class="radio-card-desc">Minimal AI rewriting. Focuses primarily on section selection.</span>
+                    <div class="style-slider-container">
+                        <div class="slider-wrapper">
+                            <input type="range" id="style-slider" min="1" max="3" value="2" step="1" class="style-slider">
+                            <div class="slider-track-ticks">
+                                <div class="tick-mark" data-index="1"></div>
+                                <div class="tick-mark active" data-index="2"></div>
+                                <div class="tick-mark" data-index="3"></div>
                             </div>
-                        </label>
-                        <label class="style-radio-card active" id="label-style-balanced">
-                            <input type="radio" name="tailor-style" value="balanced" id="style-balanced" checked>
-                            <div class="radio-card-content">
-                                <span class="radio-card-title">Balanced</span>
-                                <span class="radio-card-desc">Optimize bullet phrasing to align with keywords while preserving original meanings.</span>
+                        </div>
+                        
+                        <div class="slider-labels">
+                            <div class="slider-label-item" data-index="1">
+                                <span class="label-title">Conservative</span>
                             </div>
-                        </label>
-                        <label class="style-radio-card" id="label-style-aggressive">
-                            <input type="radio" name="tailor-style" value="aggressive" id="style-aggressive">
-                            <div class="radio-card-content">
-                                <span class="radio-card-title">Aggressive</span>
-                                <span class="radio-card-desc">Rewrite bullet points to maximize ATS matching and keywords while remaining strictly truthful.</span>
+                            <div class="slider-label-item active" data-index="2">
+                                <span class="label-title">Balanced</span>
                             </div>
-                        </label>
+                            <div class="slider-label-item" data-index="3">
+                                <span class="label-title">Aggressive</span>
+                            </div>
+                        </div>
+                        
+                        <div class="slider-descriptions">
+                            <div class="slider-desc-card" data-index="1">
+                                <i data-lucide="shield" class="desc-icon"></i>
+                                <div class="desc-text-wrapper">
+                                    <span class="desc-title">Conservative Style</span>
+                                    <p class="desc-text">Minimal AI rewriting. Focuses primarily on section selection.</p>
+                                </div>
+                            </div>
+                            <div class="slider-desc-card active" data-index="2">
+                                <i data-lucide="scale" class="desc-icon"></i>
+                                <div class="desc-text-wrapper">
+                                    <span class="desc-title">Balanced Style</span>
+                                    <p class="desc-text">Optimize bullet phrasing to align with keywords while preserving original meanings.</p>
+                                </div>
+                            </div>
+                            <div class="slider-desc-card" data-index="3">
+                                <i data-lucide="zap" class="desc-icon"></i>
+                                <div class="desc-text-wrapper">
+                                    <span class="desc-title">Aggressive Style</span>
+                                    <p class="desc-text">Rewrite bullet points to maximize ATS matching and keywords while remaining strictly truthful.</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

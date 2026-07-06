@@ -373,6 +373,8 @@ function router() {
                                 const card = input.closest(".style-radio-card");
                                 if (card) card.classList.toggle("active", input.checked);
                             });
+                            // Dispatch change event to synchronize the range slider UI
+                            rad.dispatchEvent(new Event("change"));
                         }
                     }
                     if (p.job_level) {
@@ -1784,6 +1786,9 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
     });
+
+    // Initialize custom style preference slider
+    setupStyleSlider();
     
     if (btnScrape && jdUrlInput && jdTextarea) {
         btnScrape.addEventListener("click", async () => {
@@ -1878,6 +1883,84 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ── Global Helper Functions for Tailoring View ────────────────
+function setupStyleSlider() {
+    const slider = document.getElementById("style-slider");
+    if (!slider) return;
+
+    const styles = ["conservative", "balanced", "aggressive"];
+
+    function updateSliderUI(val) {
+        // Update ticks active classes
+        document.querySelectorAll(".tick-mark").forEach(tick => {
+            const tickIdx = parseInt(tick.dataset.index);
+            tick.classList.toggle("active", tickIdx === val);
+        });
+
+        // Update labels active classes
+        document.querySelectorAll(".slider-label-item").forEach(label => {
+            const labelIdx = parseInt(label.dataset.index);
+            label.classList.toggle("active", labelIdx === val);
+        });
+
+        // Update descriptions active classes
+        document.querySelectorAll(".slider-desc-card").forEach(desc => {
+            const descIdx = parseInt(desc.dataset.index);
+            desc.classList.toggle("active", descIdx === val);
+        });
+    }
+
+    // Sync from slider to radios
+    slider.addEventListener("input", () => {
+        const val = parseInt(slider.value);
+        updateSliderUI(val);
+        
+        const styleName = styles[val - 1];
+        const radio = document.getElementById(`style-${styleName}`);
+        if (radio) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event("change"));
+        }
+    });
+
+    // Handle clicks on label items
+    document.querySelectorAll(".slider-label-item").forEach(item => {
+        item.addEventListener("click", () => {
+            const val = parseInt(item.dataset.index);
+            slider.value = val;
+            updateSliderUI(val);
+            
+            const styleName = styles[val - 1];
+            const radio = document.getElementById(`style-${styleName}`);
+            if (radio) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event("change"));
+            }
+        });
+    });
+
+    // Sync from radios to slider (for programmatically updating from cached profile or session storage)
+    document.querySelectorAll("input[name='tailor-style']").forEach(radio => {
+        radio.addEventListener("change", () => {
+            if (radio.checked) {
+                const val = styles.indexOf(radio.value) + 1;
+                if (val > 0) {
+                    slider.value = val;
+                    updateSliderUI(val);
+                }
+            }
+        });
+    });
+    
+    // Initial sync
+    const checkedRadio = document.querySelector("input[name='tailor-style']:checked");
+    if (checkedRadio) {
+        const val = styles.indexOf(checkedRadio.value) + 1;
+        if (val > 0) {
+            slider.value = val;
+            updateSliderUI(val);
+        }
+    }
+}
 let analyzeJdTimeout = null;
 
 function updateJdStatus() {

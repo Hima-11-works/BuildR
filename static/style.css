@@ -3112,3 +3112,228 @@ body.workspace-active {
     font-style: italic;
     font-size: 0.85rem;
 }
+
+/* ──────────────────────────────────────────────────────────────
+   AI Resume Tailoring - Three-Position Slider Custom Styles
+   ──────────────────────────────────────────────────────────── */
+
+.style-slider-container {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-top: var(--space-xs);
+    box-shadow: var(--shadow-card);
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.slider-wrapper {
+    position: relative;
+    width: 100%;
+    height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+/* Custom styled range slider */
+.style-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    outline: none;
+    margin: 0;
+    position: relative;
+    z-index: 3;
+    cursor: pointer;
+}
+
+/* Track styles */
+.style-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    transition: background-color var(--transition-normal);
+}
+
+.style-slider::-moz-range-track {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    transition: background-color var(--transition-normal);
+}
+
+/* Thumb styles */
+.style-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 24px;
+    width: 24px;
+    border-radius: var(--radius-full);
+    background: var(--accent-solid);
+    border: 2px solid var(--bg-card);
+    cursor: pointer;
+    margin-top: -9px; /* webkit specific to center thumb */
+    box-shadow: var(--shadow-card), 0 0 0 0px var(--accent-glow);
+    transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.style-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: var(--shadow-card), 0 0 0 6px var(--accent-glow);
+}
+
+.style-slider::-webkit-slider-thumb:active {
+    transform: scale(0.95);
+}
+
+.style-slider::-moz-range-thumb {
+    height: 20px;
+    width: 20px;
+    border-radius: var(--radius-full);
+    background: var(--accent-solid);
+    border: 2px solid var(--bg-card);
+    cursor: pointer;
+    box-shadow: var(--shadow-card), 0 0 0 0px var(--accent-glow);
+    transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.style-slider::-moz-range-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: var(--shadow-card), 0 0 0 6px var(--accent-glow);
+}
+
+.style-slider::-moz-range-thumb:active {
+    transform: scale(0.95);
+}
+
+/* Track ticks */
+.slider-track-ticks {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    padding: 0 8px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.tick-mark {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: var(--border-subtle);
+    transition: background-color var(--transition-normal), transform var(--transition-fast);
+}
+
+.tick-mark.active {
+    background: var(--accent-solid);
+    transform: scale(1.2);
+}
+
+/* Slider labels block */
+.slider-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: -4px;
+}
+
+.slider-label-item {
+    flex: 1;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.slider-label-item:first-child {
+    text-align: left;
+}
+
+.slider-label-item:last-child {
+    text-align: right;
+}
+
+.label-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: color var(--transition-normal), font-weight var(--transition-normal);
+}
+
+.slider-label-item.active .label-title {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+/* Slider details / descriptions */
+.slider-descriptions {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.slider-desc-card {
+    display: none;
+    align-items: flex-start;
+    gap: var(--space-md);
+    width: 100%;
+}
+
+.slider-desc-card.active {
+    display: flex;
+    animation: sliderFadeIn var(--transition-normal) ease-out forwards;
+}
+
+.desc-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--accent-solid);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.desc-text-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.desc-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.desc-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+@keyframes sliderFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
