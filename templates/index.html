@@ -538,7 +538,7 @@
          â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
         <div id="view-tailor-workspace" class="app-view">
             
-            <!-- STAGE 1 â€” Progress Checklist Overlay -->
+            <!-- STAGE 1 — Progress Checklist Overlay -->
             <div id="workspace-loading" class="workspace-loading-overlay">
                 <div class="loading-progress-card">
                     <div class="loading-spinner"></div>
@@ -562,33 +562,33 @@
                         </li>
                         <li id="step-build-prev">
                             <i data-lucide="circle-dashed" class="progress-icon step-waiting"></i> 
-                            <span>Building Preview</span>
+                            <span>Building Resume</span>
                         </li>
                     </ul>
                 </div>
             </div>
 
-            <!-- STAGE 2 â€” Core Workspace Panel Layout -->
+            <!-- STAGE 2 — Core Workspace Panel Layout -->
             <div id="workspace-content" class="workspace-split-container" style="display: none;">
                 
                 <!-- Left Panel (35% Column) -->
                 <div class="workspace-left-panel">
                     
-                    <!-- Factual Stats Block -->
-                    <div class="workspace-panel-card" id="ws-card-stats">
-                        <h3>AI Optimization Summary</h3>
+                    <!-- SECTION 1: Resume Insights -->
+                    <div class="workspace-panel-card" id="ws-card-insights-stats">
+                        <h3><i data-lucide="line-chart" class="card-icon text-accent"></i> Resume Insights</h3>
                         <div class="stats-grid">
                             <div class="stat-item">
-                                <span class="stat-number" id="stat-kw-added">0</span>
-                                <span class="stat-label">Keywords Added</span>
+                                <span class="stat-number" id="stat-sections-improved">0</span>
+                                <span class="stat-label">Sections Improved</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-number" id="stat-bullets-improved">0</span>
-                                <span class="stat-label">Bullets Improved</span>
+                                <span class="stat-label">Bullet Points Rewritten</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-number" id="stat-sections-reordered">0</span>
-                                <span class="stat-label">Sections Reordered</span>
+                                <span class="stat-number" id="stat-kw-added">0</span>
+                                <span class="stat-label">Keywords Highlighted</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-number" id="stat-kw-missing">0</span>
@@ -596,47 +596,33 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- Expandable AI Suggestions -->
+ 
+                    <!-- SECTION 2: AI Suggestions -->
                     <div class="workspace-panel-card" id="ws-card-suggestions">
                         <h3><i data-lucide="sparkles" class="card-icon text-accent"></i> AI Suggestions</h3>
                         <div id="ws-suggestions-list" class="suggestions-accordion">
                             <!-- Populated dynamically -->
                         </div>
                     </div>
-
-                    <!-- Keywords Not Included -->
+ 
+                    <!-- SECTION 3: Keywords Not Included -->
                     <div class="workspace-panel-card" id="ws-card-missing-skills">
                         <h3><i data-lucide="shield-alert" class="card-icon text-warning"></i> Keywords Not Included</h3>
-                        <p class="stats-card-desc">To preserve absolute truthfulness, the following skills requested in the job description were omitted because they aren't supported by your Master Resume.</p>
+                        <p class="stats-card-desc">BuildR never invents skills or experience. These keywords were detected in the job description but could not be truthfully included.</p>
                         <div id="ws-missing-badges" class="skills-badges-list">
                             <!-- Populated dynamically -->
                         </div>
                     </div>
-
-                    <!-- Resume Insights -->
-                    <div class="workspace-panel-card" id="ws-card-insights">
-                        <h3><i data-lucide="lightbulb" class="card-icon text-success"></i> Resume Insights</h3>
-                        <div class="insight-metric-row">
-                            <div class="insight-submetric"><span>AI Confidence:</span> <strong id="insight-confidence">-</strong></div>
-                            <div class="insight-submetric"><span>Resume Length:</span> <strong id="insight-length">-</strong></div>
-                        </div>
-                        <div class="insight-bullets">
-                            <span class="insight-bullet-header">Strengths</span>
-                            <ul id="insight-strengths-list" class="insight-list"></ul>
-                            <span class="insight-bullet-header" style="margin-top: var(--space-md);">Opportunities for Improvement</span>
-                            <ul id="insight-opps-list" class="insight-list"></ul>
-                        </div>
-                    </div>
-
-                    <!-- Refine with AI (Chat Section) -->
+ 
+                    <!-- SECTION 4: Refine with AI -->
                     <div class="workspace-panel-card" id="ws-card-chat">
                         <h3><i data-lucide="message-square" class="card-icon"></i> Refine with AI</h3>
                         <div class="prompt-chips-container">
                             <button type="button" class="prompt-chip" data-prompt="Make my projects stronger">Make projects stronger</button>
                             <button type="button" class="prompt-chip" data-prompt="Reduce this to one page">Reduce to 1 page</button>
-                            <button type="button" class="prompt-chip" data-prompt="Focus on leadership experience">Focus on leadership</button>
+                            <button type="button" class="prompt-chip" data-prompt="Focus on leadership">Focus on leadership</button>
                             <button type="button" class="prompt-chip" data-prompt="Use stronger action verbs">Stronger action verbs</button>
+                            <button type="button" class="prompt-chip" data-prompt="Make this more suitable for software engineering internships">For SWE internships</button>
                         </div>
                         <div id="ws-chat-history" class="chat-history-box">
                             <!-- Conversation thread -->
@@ -648,50 +634,34 @@
                             </button>
                         </form>
                     </div>
-
+ 
                 </div><!-- /.workspace-left-panel -->
-
-                <!-- Right Panel (65% Column - PDF Preview) -->
+ 
+                <!-- Right Panel (65% Column - Document Editor) -->
                 <div class="workspace-right-panel">
-                    <div class="preview-container">
-                        <div class="preview-zoom-wrapper" id="pdf-zoom-wrapper">
-                            <iframe id="ws-pdf-iframe" src="about:blank"></iframe>
-                        </div>
-                        <div class="zoom-controls">
-                            <button type="button" class="zoom-btn" id="zoom-out" title="Zoom Out"><i data-lucide="minus"></i></button>
-                            <button type="button" class="zoom-btn" id="zoom-reset" title="Reset Zoom">100%</button>
-                            <button type="button" class="zoom-btn" id="zoom-in" title="Zoom In"><i data-lucide="plus"></i></button>
+                    <div class="editor-scroll-container">
+                        <div id="resume-editor" class="resume-document-page">
+                            <!-- Document content rendered dynamically -->
                         </div>
                     </div>
                 </div><!-- /.workspace-right-panel -->
-
+ 
             </div><!-- /.workspace-split-container -->
-
+ 
             <!-- Bottom Action Bar -->
             <div id="workspace-bottom-bar" class="workspace-bottom-bar" style="display: none;">
                 <div class="bottom-bar-left">
-                    <a href="#tailor" class="btn-secondary" id="ws-btn-startover">
+                    <button type="button" class="btn-secondary" id="ws-btn-startover">
                         <i data-lucide="arrow-left" class="btn-icon"></i> Start Over
-                    </a>
+                    </button>
                 </div>
                 <div class="bottom-bar-right">
-                    <div class="snapshot-controls">
-                        <button type="button" class="btn-secondary" id="ws-btn-snapshot">
-                            <i data-lucide="camera" class="btn-icon"></i> Save Snapshot
-                        </button>
-                        <select id="ws-dropdown-snapshots" class="form-select">
-                            <option value="">Restore Snapshot...</option>
-                        </select>
-                    </div>
-                    <button type="button" class="btn-secondary" id="ws-btn-save-library">
-                        <i data-lucide="save" class="btn-icon"></i> Save Tailored Version
-                    </button>
                     <button type="button" class="btn-primary" id="ws-btn-download">
                         <i data-lucide="download" class="btn-icon"></i> Download Tailored Resume
                     </button>
                 </div>
             </div>
-
+ 
         </div>
 
     </div><!-- /.app-container -->

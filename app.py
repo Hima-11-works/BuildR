@@ -646,6 +646,125 @@ def api_tailor_save():
         return jsonify({"error": f"Failed to save tailored resume: {str(e)}"}), 500
 
 
+@app.route("/api/tailor/draft/<session_id>", methods=["GET"])
+def api_tailor_get_draft(session_id):
+    """
+    Return the current active draft profile and AI metadata for the workspace editor.
+    The frontend uses this to populate the editable resume editor and left-panel cards.
+    """
+    try:
+        profile, metadata = session_service.load_draft(session_id)
+        return jsonify({
+            "status": "ok",
+            "profile": profile.model_dump(),
+            "suggestions": metadata.get("suggestions", []),
+            "keywords_not_included_list": metadata.get("keywords_not_included_list", []),
+            "stats": metadata.get("stats", {}),
+            "insights": metadata.get("insights", {}),
+        })
+    except FileNotFoundError:
+        return jsonify({"error": "Session draft not found."}), 404
+    except Exception as e:
+        print(f"Error loading draft: {str(e)}")
+        return jsonify({"error": f"Failed to load draft: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/draft/<session_id>", methods=["PUT"])
+def api_tailor_update_draft(session_id):
+    """
+    Accept a manually edited profile JSON from the workspace editor and save it
+    as the active draft.  Preserves existing AI metadata (suggestions, stats,
+    insights) so only the profile content is overwritten.
+
+    This is the bridge that lets AI and user collaborate on the SAME working
+    draft: the user's manual edits are persisted here, and when the AI chat
+    endpoint runs next, it calls load_draft() and sees those edits.
+    """
+    data = request.get_json()
+    if not data or "profile" not in data:
+        return jsonify({"error": "Missing profile data."}), 400
+
+    try:
+        # Validate the incoming profile through Pydantic
+        profile = Profile.model_validate(data["profile"])
+
+        # Load existing metadata so we don't lose AI suggestions / stats / insights
+        try:
+            _, existing_metadata = session_service.load_draft(session_id)
+        except Exception:
+            existing_metadata = {}
+
+        session_service.update_draft(
+            session_id=session_id,
+            profile=profile,
+            metadata=existing_metadata,
+        )
+
+        return jsonify({"status": "ok"})
+
+    except ValidationError as e:
+        errors = [{"loc": list(err["loc"]), "msg": err["msg"]} for err in e.errors()]
+        return jsonify({"errors": errors}), 422
+    except Exception as e:
+        print(f"Error updating draft: {str(e)}")
+        return jsonify({"error": f"Failed to update draft: {str(e)}"}), 500
+
+
+@app.route("/api/tailor/download/<session_id>", methods=["POST"])
+def api_tailor_download(session_id):
+    """
+    Generate and download a PDF from the latest active draft.
+
+    Pipeline:
+    1. load_draft() → Profile (includes all manual + AI edits)
+    2. render_latex() → .tex string
+    3. compile_pdf() → .pdf file
+    4. save_resume() → persist to library
+    5. send_file() → return PDF as attachment download
+
+    The downloaded PDF always reflects the latest state of the editor.
+    """
+    try:
+        profile, _ = session_service.load_draft(session_id)
+        job_context = session_service.load_job_context(session_id)
+        job_description = job_context.get("job_description", "")
+
+        # Render and compile
+        tex_string = render_latex(profile)
+        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
+
+        # Build a label from the job description
+        label = job_description[:60].strip()
+        if len(job_description) > 60:
+            label += "…"
+
+        # Persist to library
+        resume_id = save_resume(
+            tex_string=tex_string,
+            pdf_path=pdf_path,
+            resume_type="tailored",
+            label=label,
+            job_description=job_description,
+        )
+
+        # Return the PDF for download
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"BuildR_Tailored_{resume_id}.pdf",
+        )
+
+    except PdfCompilationError as e:
+        print(f"PDF compilation error (download): {e}")
+        return jsonify({"error": str(e), "log": e.log}), 500
+    except Exception as e:
+        print(f"Error downloading tailored resume: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to download resume: {str(e)}"}), 500
+
+
 @app.route("/api/tailor/preview/<session_id>/<version_type>/<version_id>", methods=["GET"])
 def api_tailor_preview(session_id, version_type, version_id):
     """

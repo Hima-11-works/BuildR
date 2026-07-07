@@ -3337,3 +3337,294 @@ body.workspace-active {
         transform: translateY(0);
     }
 }
+
+
+/* ──────────────────────────────────────────────────────────────
+   AI WORKSPACE DOCUMENT EDITOR CUSTOM STYLES
+   ──────────────────────────────────────────────────────────── */
+
+.editor-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    height: 100%;
+    padding: var(--space-md);
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+}
+
+.resume-document-page {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    padding: var(--space-xl) var(--space-2xl);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-elevated);
+    max-width: 800px;
+    margin: 0 auto;
+    font-family: 'Inter', sans-serif;
+    min-height: 1000px;
+    line-height: 1.5;
+}
+
+.editor-section {
+    margin-bottom: var(--space-lg);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.editor-section-header {
+    font-family: 'Sora', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border-strong);
+    padding-bottom: 4px;
+    margin-bottom: var(--space-sm);
+    color: var(--accent-solid);
+}
+
+.editor-section-header-row {
+    margin-bottom: var(--space-sm);
+}
+
+.editor-entry {
+    margin-bottom: var(--space-md);
+    position: relative;
+}
+
+.editor-entry-row {
+    margin-bottom: var(--space-xs);
+    font-size: 0.9rem;
+}
+
+.editor-entry-details {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+}
+
+.editor-entry-footer {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: var(--space-xs);
+}
+
+.footer-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.editor-name {
+    font-family: 'Sora', sans-serif;
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
+    color: var(--text-primary);
+}
+
+.editor-contact-info {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+}
+
+.editor-links-container {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-md);
+}
+
+.editor-link-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.editor-link-item:hover .btn-delete-link {
+    opacity: 1;
+}
+
+.editor-separator {
+    color: var(--text-muted);
+}
+
+/* Bullets Styling */
+.editor-bullets-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.editor-bullet-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 4px;
+    font-size: 0.875rem;
+}
+
+.bullet-dot {
+    margin-right: var(--space-xs);
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.editor-bullet-content {
+    flex: 1;
+    outline: none;
+}
+
+/* Inline Edit Controls */
+[contenteditable="true"] {
+    outline: none;
+    transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+    border-radius: var(--radius-xs);
+    padding: 1px 4px;
+    min-width: 20px;
+    display: inline-block;
+}
+
+[contenteditable="true"]:hover {
+    background-color: rgba(99, 102, 241, 0.05); /* very soft violet/accent hover */
+}
+
+[contenteditable="true"]:focus {
+    background-color: rgba(99, 102, 241, 0.1);
+    box-shadow: 0 0 0 1px var(--accent-solid);
+}
+
+[contenteditable="true"]:empty:not(:focus)::before {
+    content: attr(placeholder);
+    color: var(--text-muted);
+    font-style: italic;
+    opacity: 0.7;
+}
+
+/* Deletion buttons */
+.btn-delete-bullet {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    margin-left: 4px;
+    transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.editor-bullet-item:hover .btn-delete-bullet {
+    opacity: 1;
+}
+
+.btn-delete-link {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 2px;
+    transition: opacity var(--transition-fast);
+}
+
+.btn-add-bullet {
+    background: none;
+    border: none;
+    color: var(--accent-solid);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 4px;
+    margin-top: 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    transition: color var(--transition-fast);
+}
+
+.btn-add-bullet:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+.btn-add-entry {
+    background: none;
+    border: 1px dashed var(--border-strong);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all var(--transition-fast);
+}
+
+.btn-add-entry:hover {
+    border-color: var(--accent-solid);
+    color: var(--accent-solid);
+    background-color: rgba(99, 102, 241, 0.05);
+}
+
+.btn-delete-entry {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    border-radius: var(--radius-xs);
+}
+
+.btn-delete-entry:hover {
+    color: var(--danger);
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.editor-entry:hover .btn-delete-entry {
+    opacity: 1;
+}
+
+.btn-add-link {
+    background: none;
+    border: 1px dashed var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.btn-add-link:hover {
+    border-color: var(--accent-solid);
+    color: var(--accent-solid);
+}
+
+/* AI Highlight animation */
+.ai-highlight {
+    animation: highlightFade 3s ease-out;
+}
+
+@keyframes highlightFade {
+    0% {
+        background-color: rgba(245, 158, 11, 0.35); /* yellow glow */
+        border-color: rgba(245, 158, 11, 0.5);
+    }
+    100% {
+        background-color: transparent;
+        border-color: transparent;
+    }
+}
+

@@ -2107,63 +2107,9 @@ async function analyzeJobDescriptionText(jdText) {
 
 // ── AI Resume Workspace View Controllers ──────────────────────
 let workspaceSessionId = null;
-let iframeZoom = 1.0;
-let workspaceActiveSnapshotId = null;
+let currentProfileJson = null;
+let autoSaveTimeout = null;
 let isEventsWired = false;
-
-/**
- * Custom themed modal for naming a snapshot.
- * Resolves with the entered string, or null if cancelled.
- */
-function openSnapshotNameModal() {
-    return new Promise((resolve) => {
-        const overlay = document.getElementById("snapshot-modal");
-        if (!overlay) {
-            // Fallback if modal missing
-            const fallback = window.prompt("Enter a label for this snapshot (e.g. 'Stronger Projects'):");
-            resolve(fallback);
-            return;
-        }
-        const input = document.getElementById("snapshot-modal-input");
-        const confirmBtn = document.getElementById("snapshot-modal-confirm");
-        const cancelBtn = document.getElementById("snapshot-modal-cancel");
-        const closeBtn = document.getElementById("snapshot-modal-close");
-        const card = overlay.querySelector(".modal-card");
-
-        // Reset previous state
-        input.value = "";
-        overlay.classList.add("active");
-        // Ensure icons inside the modal render correctly
-        refreshIcons();
-        setTimeout(() => {
-            refreshIcons();
-            input.focus();
-        }, 50);
-
-        const close = (value) => {
-            overlay.classList.remove("active");
-            confirmBtn.removeEventListener("click", onConfirm);
-            cancelBtn.removeEventListener("click", onCancel);
-            closeBtn.removeEventListener("click", onCancel);
-            overlay.removeEventListener("click", onOverlay);
-            input.removeEventListener("keydown", onKey);
-            resolve(value);
-        };
-        const onConfirm = () => close(input.value.trim() || null);
-        const onCancel = () => close(null);
-        const onOverlay = (e) => { if (e.target === overlay) onCancel(); };
-        const onKey = (e) => {
-            if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
-            else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-        };
-
-        confirmBtn.addEventListener("click", onConfirm);
-        cancelBtn.addEventListener("click", onCancel);
-        closeBtn.addEventListener("click", onCancel);
-        overlay.addEventListener("click", onOverlay);
-        input.addEventListener("keydown", onKey);
-    });
-}
 
 function setStepState(stepId, state) {
     const stepEl = document.getElementById(stepId);
@@ -2275,10 +2221,9 @@ async function initializeTailoringWorkspace() {
         
         // Initialize state variables
         workspaceSessionId = wsData.session_id;
-        workspaceActiveSnapshotId = null;
         
-        // Render workspace content
-        renderWorkspaceData(wsData);
+        // Fetch the full draft (with profile) to render
+        await fetchAndRenderWorkspace(workspaceSessionId);
         
         // Hide Stage 1 Loading and reveal Stage 2
         document.getElementById("workspace-loading").style.display = "none";
@@ -2288,24 +2233,37 @@ async function initializeTailoringWorkspace() {
         // Initialize chat history with welcome message
         initChatHistory();
         
-        // Reset snapshot dropdown
-        updateSnapshotDropdown([]);
-        
         showToast("Tailored resume generated!", "success");
+    } else if (workspaceSessionId) {
+        // If hash router matches and workspaceSessionId is set, just refresh
+        await fetchAndRenderWorkspace(workspaceSessionId);
+    }
+}
+
+async function fetchAndRenderWorkspace(sessionId) {
+    try {
+        const response = await fetch(`/api/tailor/draft/${sessionId}`);
+        if (!response.ok) throw new Error("Failed to fetch draft data.");
+        const data = await response.json();
+        
+        currentProfileJson = data.profile;
+        renderWorkspaceData(data);
+    } catch (err) {
+        showToast(err.message, "error");
     }
 }
 
 function renderWorkspaceData(data) {
-    // 1. Update stats
-    document.getElementById("stat-kw-added").textContent = data.stats.keywords_added;
-    document.getElementById("stat-bullets-improved").textContent = data.stats.bullets_improved;
-    document.getElementById("stat-sections-reordered").textContent = data.stats.sections_reordered;
-    document.getElementById("stat-kw-missing").textContent = data.stats.keywords_not_included;
+    // 1. Update Resume Insights (stats)
+    document.getElementById("stat-sections-improved").textContent = data.stats.sections_reordered || 0;
+    document.getElementById("stat-bullets-improved").textContent = data.stats.bullets_improved || 0;
+    document.getElementById("stat-kw-added").textContent = data.stats.keywords_added || 0;
+    document.getElementById("stat-kw-missing").textContent = data.stats.keywords_not_included || 0;
     
     // 2. Expandable Suggestions Accordion
     const suggestionsList = document.getElementById("ws-suggestions-list");
     suggestionsList.innerHTML = "";
-    if (data.suggestions.length === 0) {
+    if (!data.suggestions || data.suggestions.length === 0) {
         suggestionsList.innerHTML = `<p style="font-size: 0.85rem; color: var(--text-muted); padding: var(--space-sm) 0;">No suggestions needed. The resume is fully aligned!</p>`;
     } else {
         data.suggestions.forEach(s => {
@@ -2341,7 +2299,7 @@ function renderWorkspaceData(data) {
     // 3. Keywords Not Included Badges
     const missingBadges = document.getElementById("ws-missing-badges");
     missingBadges.innerHTML = "";
-    if (data.keywords_not_included_list.length === 0) {
+    if (!data.keywords_not_included_list || data.keywords_not_included_list.length === 0) {
         missingBadges.innerHTML = `<span style="font-size: 0.85rem; color: var(--text-muted);">None</span>`;
     } else {
         data.keywords_not_included_list.forEach(skill => {
@@ -2355,49 +2313,8 @@ function renderWorkspaceData(data) {
         });
     }
     
-    // 4. Resume Insights Card
-    document.getElementById("insight-confidence").textContent = data.insights.ai_confidence;
-    document.getElementById("insight-length").textContent = data.insights.resume_length;
-    
-    // Insights lists
-    const strengthsList = document.getElementById("insight-strengths-list");
-    strengthsList.innerHTML = "";
-    if (data.insights.strengths.length === 0) {
-        const li = document.createElement("li");
-        li.className = "empty-insight";
-        li.textContent = "No additional strengths identified.";
-        strengthsList.appendChild(li);
-    } else {
-        data.insights.strengths.forEach(s => {
-            const li = document.createElement("li");
-            li.textContent = s;
-            strengthsList.appendChild(li);
-        });
-    }
-
-    const oppsList = document.getElementById("insight-opps-list");
-    oppsList.innerHTML = "";
-    if (data.insights.opportunities.length === 0) {
-        const li = document.createElement("li");
-        li.className = "empty-insight";
-        li.textContent = "No further opportunities flagged.";
-        oppsList.appendChild(li);
-    } else {
-        data.insights.opportunities.forEach(o => {
-            const li = document.createElement("li");
-            li.textContent = o;
-            oppsList.appendChild(li);
-        });
-    }
-    
-    // 5. Update Preview PDF IFrame
-    const versionType = workspaceActiveSnapshotId ? "snapshot" : "draft";
-    const versionId = workspaceActiveSnapshotId ? workspaceActiveSnapshotId : "latest";
-    const iframe = document.getElementById("ws-pdf-iframe");
-    iframe.src = `/api/tailor/preview/${workspaceSessionId}/${versionType}/${versionId}?t=${Date.now()}`;
-    
-    // Apply current zoom
-    applyZoom();
+    // 4. Update the editable resume editor
+    renderResumeEditor(data.profile);
     refreshIcons();
 }
 
@@ -2406,7 +2323,7 @@ function initChatHistory() {
     historyBox.innerHTML = `
         <div class="chat-message assistant">
             Hi! I've completed the initial resume tailoring according to your target job. 
-            Review the suggestions and insights above, or ask me to make specific refinements here!
+            Review the suggestions and insights above, edit anything in the document directly, or ask me to make specific refinements here!
         </div>
     `;
     historyBox.scrollTop = historyBox.scrollHeight;
@@ -2447,6 +2364,9 @@ async function handleChatSubmit(e) {
     historyBox.scrollTop = historyBox.scrollHeight;
     
     try {
+        // Force sync manual edits before submitting chat instructions
+        await forceSaveDraft();
+
         const response = await fetch("/api/tailor/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2466,15 +2386,11 @@ async function handleChatSubmit(e) {
         // Remove loader bubble
         loaderMsg.remove();
         
-        // Reset the active snapshot since draft is now revised
-        workspaceActiveSnapshotId = null;
-        document.getElementById("ws-dropdown-snapshots").value = "";
-        
         // Append Assistant Explanation bubble
         const assistantMsg = document.createElement("div");
         assistantMsg.className = "chat-message assistant";
         
-        if (data.suggestions.length > 0) {
+        if (data.suggestions && data.suggestions.length > 0) {
             const intro = document.createElement("div");
             intro.className = "chat-intro";
             intro.textContent = "Done! Here is what I changed and why:";
@@ -2494,18 +2410,30 @@ async function handleChatSubmit(e) {
             });
             assistantMsg.appendChild(list);
         } else {
-            assistantMsg.textContent = "I've revised the resume preview based on your instructions.";
+            assistantMsg.textContent = "I've revised the resume based on your instructions.";
         }
         
         historyBox.appendChild(assistantMsg);
         historyBox.scrollTop = historyBox.scrollHeight;
         
-        // Re-render data
-        renderWorkspaceData(data);
+        // Fetch updated draft (profile + metadata)
+        const draftResponse = await fetch(`/api/tailor/draft/${workspaceSessionId}`);
+        if (!draftResponse.ok) throw new Error("Failed to fetch refined draft data.");
+        const updatedData = await draftResponse.json();
+        
+        const prevProfile = currentProfileJson;
+        currentProfileJson = updatedData.profile;
+        
+        // Re-render
+        renderWorkspaceData(updatedData);
+        
+        // Visual feedback highlight
+        highlightChangedSections(prevProfile, updatedData.profile);
+        
         showToast("Resume revised successfully!", "success");
         
     } catch (err) {
-        loaderMsg.remove();
+        if (loaderMsg.parentNode) loaderMsg.remove();
         showToast(err.message, "error");
         
         const assistantMsg = document.createElement("div");
@@ -2521,34 +2449,743 @@ async function handleChatSubmit(e) {
     }
 }
 
-function applyZoom() {
-    const iframe = document.getElementById("ws-pdf-iframe");
-    const label = document.getElementById("zoom-reset");
+function highlightChangedSections(prev, curr) {
+    if (!prev || !curr) return;
     
-    if (iframe) {
-        iframe.style.transform = `scale(${iframeZoom})`;
-        iframe.style.width = `${100 / iframeZoom}%`;
-        iframe.style.height = `${100 / iframeZoom}%`;
+    const triggerHighlight = (id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.add("ai-highlight");
+            setTimeout(() => {
+                el.classList.remove("ai-highlight");
+            }, 3000);
+        }
+    };
+
+    if (prev.achievements !== curr.achievements) {
+        triggerHighlight("editor-section-achievements");
     }
-    if (label) {
-        label.textContent = `${Math.round(iframeZoom * 100)}%`;
+    if (JSON.stringify(prev.personal_info) !== JSON.stringify(curr.personal_info)) {
+        triggerHighlight("editor-section-personal");
+    }
+    if (JSON.stringify(prev.education) !== JSON.stringify(curr.education)) {
+        triggerHighlight("editor-section-education");
+    }
+    if (JSON.stringify(prev.experience) !== JSON.stringify(curr.experience)) {
+        triggerHighlight("editor-section-experience");
+    }
+    if (JSON.stringify(prev.projects) !== JSON.stringify(curr.projects)) {
+        triggerHighlight("editor-section-projects");
+    }
+    if (JSON.stringify(prev.skills) !== JSON.stringify(curr.skills)) {
+        triggerHighlight("editor-section-skills");
+    }
+    if (JSON.stringify(prev.certifications) !== JSON.stringify(curr.certifications)) {
+        triggerHighlight("editor-section-certifications");
     }
 }
 
-function updateSnapshotDropdown(snapshots) {
-    const select = document.getElementById("ws-dropdown-snapshots");
-    if (!select) return;
+function renderResumeEditor(profile) {
+    const editor = document.getElementById("resume-editor");
+    if (!editor) return;
+
+    let html = "";
+
+    // 1. Personal Info Section
+    const pi = profile.personal_info || { name: "", email: "", phone: "", links: {} };
+    html += `
+        <div class="editor-section" id="editor-section-personal">
+            <div class="editor-section-body text-center">
+                <h1 id="editor-pi-name" class="editor-name font-bold" contenteditable="true" placeholder="Your Name">${escapeHtml(pi.name)}</h1>
+                <div class="editor-contact-info">
+                    <span id="editor-pi-email" contenteditable="true" placeholder="email@domain.com">${escapeHtml(pi.email)}</span>
+                    <span class="editor-separator"> | </span>
+                    <span id="editor-pi-phone" contenteditable="true" placeholder="Phone Number">${escapeHtml(pi.phone || "")}</span>
+                </div>
+                <div class="editor-links-container" id="editor-links-list">
+    `;
     
-    select.innerHTML = `<option value="">Restore Snapshot...</option>`;
-    snapshots.forEach(s => {
-        const dateStr = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const option = document.createElement("option");
-        option.value = s.id;
-        option.textContent = `${s.name} (${dateStr})`;
-        select.appendChild(option);
+    // Render links
+    const links = pi.links || {};
+    Object.entries(links).forEach(([label, url]) => {
+        html += `
+            <span class="editor-link-item" data-label="${escapeHtml(label)}">
+                <span class="editor-separator"> | </span>
+                <span class="link-label font-semibold" contenteditable="true">${escapeHtml(label)}</span>: 
+                <span class="link-url" contenteditable="true">${escapeHtml(url)}</span>
+                <button type="button" class="btn-delete-link" title="Remove Link">×</button>
+            </span>
+        `;
     });
     
-    select.value = workspaceActiveSnapshotId || "";
+    html += `
+                    <button type="button" class="btn-add-link" style="margin-left: 8px;">+ Add Link</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Helper for Section Headers
+    const renderSectionHeader = (title, addBtnId, addBtnText) => {
+        return `
+            <div class="editor-section-header-row flex justify-between items-center">
+                <h2 class="editor-section-header">${title}</h2>
+                ${addBtnId ? `<button type="button" id="${addBtnId}" class="btn-add-entry"><i data-lucide="plus"></i> ${addBtnText}</button>` : ""}
+            </div>
+        `;
+    };
+
+    // 2. Experience Section
+    html += `
+        <div class="editor-section" id="editor-section-experience">
+            ${renderSectionHeader("Work Experience", "btn-editor-add-exp", "Add Job")}
+            <div id="editor-experience-list">
+    `;
+    (profile.experience || []).forEach((exp, idx) => {
+        html += `
+            <div class="editor-exp-entry editor-entry" data-index="${idx}">
+                <div class="editor-entry-row flex justify-between">
+                    <div class="editor-entry-header-left">
+                        <span class="exp-role font-bold" contenteditable="true" placeholder="Role">${escapeHtml(exp.role)}</span>
+                        <span class="editor-separator"> at </span>
+                        <span class="exp-company font-bold" contenteditable="true" placeholder="Company">${escapeHtml(exp.company)}</span>
+                        <span class="exp-work-mode italic" contenteditable="true" placeholder="Remote/Onsite">${escapeHtml(exp.work_mode || "")}</span>
+                    </div>
+                    <div class="editor-entry-header-right flex items-center gap-sm">
+                        <span class="exp-start-date" contenteditable="true" placeholder="Start Date">${escapeHtml(exp.start_date)}</span>
+                        <span class="editor-separator"> — </span>
+                        <span class="exp-end-date" contenteditable="true" placeholder="End Date">${escapeHtml(exp.end_date)}</span>
+                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                    </div>
+                </div>
+                <div class="editor-bullets-container">
+                    <ul class="editor-bullets-list">
+        `;
+        (exp.bullets || []).forEach((bullet) => {
+            html += `
+                <li class="editor-bullet-item">
+                    <span class="bullet-dot">•</span>
+                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${bullet}</div>
+                    <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
+                </li>
+            `;
+        });
+        html += `
+                    </ul>
+                    <button type="button" class="btn-add-bullet">+ Add Bullet</button>
+                </div>
+                <div class="editor-entry-footer">
+                    <span class="footer-label">Technologies: </span>
+                    <span class="exp-technologies" contenteditable="true" placeholder="e.g. React, Python">${escapeHtml((exp.technologies || []).join(", "))}</span>
+                </div>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 3. Projects Section
+    html += `
+        <div class="editor-section" id="editor-section-projects">
+            ${renderSectionHeader("Projects", "btn-editor-add-proj", "Add Project")}
+            <div id="editor-projects-list">
+    `;
+    (profile.projects || []).forEach((proj, idx) => {
+        html += `
+            <div class="editor-proj-entry editor-entry" data-index="${idx}">
+                <div class="editor-entry-row flex justify-between">
+                    <div class="editor-entry-header-left">
+                        <span class="proj-name font-bold" contenteditable="true" placeholder="Project Name">${escapeHtml(proj.name)}</span>
+                        <span class="editor-separator"> | </span>
+                        <span class="proj-link italic" contenteditable="true" placeholder="Project Link">${escapeHtml(proj.link || "")}</span>
+                    </div>
+                    <div class="editor-entry-header-right flex items-center gap-sm">
+                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                    </div>
+                </div>
+                <div class="proj-description-container">
+                    <div class="proj-description text-muted" contenteditable="true" placeholder="Project One-liner Description...">${proj.description || ""}</div>
+                </div>
+                <div class="editor-bullets-container">
+                    <ul class="editor-bullets-list">
+        `;
+        (proj.bullets || []).forEach((bullet) => {
+            html += `
+                <li class="editor-bullet-item">
+                    <span class="bullet-dot">•</span>
+                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${bullet}</div>
+                    <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
+                </li>
+            `;
+        });
+        html += `
+                    </ul>
+                    <button type="button" class="btn-add-bullet">+ Add Bullet</button>
+                </div>
+                <div class="editor-entry-footer">
+                    <span class="footer-label">Technologies: </span>
+                    <span class="proj-technologies" contenteditable="true" placeholder="e.g. React, Node.js">${escapeHtml((proj.technologies || []).join(", "))}</span>
+                </div>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 4. Skills Section
+    html += `
+        <div class="editor-section" id="editor-section-skills">
+            ${renderSectionHeader("Technical Skills", "btn-editor-add-skill-cat", "Add Category")}
+            <div id="editor-skills-categories" class="skills-editor-grid">
+    `;
+    const skillCats = (profile.skills && profile.skills.categories) || {};
+    Object.entries(skillCats).forEach(([catName, skillsList]) => {
+        html += `
+            <div class="editor-skill-category editor-entry flex" data-category="${escapeHtml(catName)}">
+                <span class="skill-category-name font-bold" contenteditable="true" placeholder="Category Name">${escapeHtml(catName)}</span>
+                <span class="editor-separator">: </span>
+                <span class="skill-category-skills flex-grow" contenteditable="true" placeholder="Skills (comma separated)">${escapeHtml(skillsList.join(", "))}</span>
+                <button type="button" class="btn-delete-entry" title="Remove Category"><i data-lucide="trash-2"></i></button>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 5. Education Section
+    html += `
+        <div class="editor-section" id="editor-section-education">
+            ${renderSectionHeader("Education", "btn-editor-add-edu", "Add Education")}
+            <div id="editor-education-list">
+    `;
+    (profile.education || []).forEach((edu, idx) => {
+        html += `
+            <div class="editor-edu-entry editor-entry" data-index="${idx}">
+                <div class="editor-entry-row flex justify-between">
+                    <div class="editor-entry-header-left">
+                        <span class="edu-institution font-bold" contenteditable="true" placeholder="Institution">${escapeHtml(edu.institution)}</span>
+                        <span class="editor-separator"> — </span>
+                        <span class="edu-degree font-semibold" contenteditable="true" placeholder="Degree">${escapeHtml(edu.degree)}</span>
+                    </div>
+                    <div class="editor-entry-header-right flex items-center gap-sm">
+                        <span class="edu-start-date" contenteditable="true" placeholder="Start Date">${escapeHtml(edu.start_date)}</span>
+                        <span class="editor-separator"> — </span>
+                        <span class="edu-end-date" contenteditable="true" placeholder="End Date">${escapeHtml(edu.end_date)}</span>
+                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                    </div>
+                </div>
+                <div class="editor-entry-details flex gap-md">
+                    <div>
+                        <span class="footer-label">GPA: </span>
+                        <span class="edu-gpa" contenteditable="true" placeholder="Omit or e.g. 3.9">${edu.gpa !== null && edu.gpa !== undefined ? edu.gpa : ""}</span>
+                    </div>
+                    <div class="flex-grow">
+                        <span class="footer-label">Coursework: </span>
+                        <span class="edu-coursework" contenteditable="true" placeholder="e.g. Algorithms, Databases">${escapeHtml((edu.coursework || []).join(", "))}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 6. Certifications Section
+    html += `
+        <div class="editor-section" id="editor-section-certifications">
+            ${renderSectionHeader("Certifications", "btn-editor-add-cert", "Add Certification")}
+            <div id="editor-certifications-list">
+    `;
+    (profile.certifications || []).forEach((cert, idx) => {
+        html += `
+            <div class="editor-cert-entry editor-entry" data-index="${idx}">
+                <div class="editor-entry-row flex justify-between">
+                    <div class="editor-entry-header-left">
+                        <span class="cert-name font-bold" contenteditable="true" placeholder="Certification Name">${escapeHtml(cert.name)}</span>
+                        <span class="editor-separator"> by </span>
+                        <span class="cert-issuer font-semibold" contenteditable="true" placeholder="Issuer">${escapeHtml(cert.issuer)}</span>
+                    </div>
+                    <div class="editor-entry-header-right flex items-center gap-sm">
+                        <span class="cert-date" contenteditable="true" placeholder="Date">${escapeHtml(cert.date)}</span>
+                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                    </div>
+                </div>
+                <div class="cert-description text-muted" contenteditable="true" placeholder="Optional description...">${cert.description ? cert.description : ""}</div>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 7. Achievements Section
+    html += `
+        <div class="editor-section" id="editor-section-achievements">
+            ${renderSectionHeader("Achievements & Awards")}
+            <div id="editor-achievements-text" class="editor-achievements-content" contenteditable="true" placeholder="Type your achievements here...">${profile.achievements || ""}</div>
+        </div>
+    `;
+
+    editor.innerHTML = html;
+    
+    wireEditorEvents();
+}
+
+function wireEditorEvents() {
+    const editor = document.getElementById("resume-editor");
+    if (!editor) return;
+
+    editor.addEventListener("input", () => {
+        debouncedSaveDraft();
+    });
+
+    editor.addEventListener("click", (e) => {
+        const btnDeleteBullet = e.target.closest(".btn-delete-bullet");
+        if (btnDeleteBullet) {
+            const li = btnDeleteBullet.closest(".editor-bullet-item");
+            if (li) {
+                li.remove();
+                debouncedSaveDraft();
+            }
+            return;
+        }
+
+        const btnAddBullet = e.target.closest(".btn-add-bullet");
+        if (btnAddBullet) {
+            const ul = btnAddBullet.previousElementSibling;
+            if (ul && ul.classList.contains("editor-bullets-list")) {
+                const li = document.createElement("li");
+                li.className = "editor-bullet-item";
+                li.innerHTML = `
+                    <span class="bullet-dot">•</span>
+                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details..."></div>
+                    <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
+                `;
+                ul.appendChild(li);
+                li.querySelector(".editor-bullet-content").focus();
+                debouncedSaveDraft();
+            }
+            return;
+        }
+
+        const btnDeleteEntry = e.target.closest(".btn-delete-entry");
+        if (btnDeleteEntry) {
+            const entry = btnDeleteEntry.closest(".editor-entry");
+            if (entry) {
+                entry.remove();
+                debouncedSaveDraft();
+            }
+            return;
+        }
+
+        const btnDeleteLink = e.target.closest(".btn-delete-link");
+        if (btnDeleteLink) {
+            const span = btnDeleteLink.closest(".editor-link-item");
+            if (span) {
+                span.remove();
+                debouncedSaveDraft();
+            }
+            return;
+        }
+
+        const btnAddLink = e.target.closest(".btn-add-link");
+        if (btnAddLink) {
+            const container = document.getElementById("editor-links-list");
+            if (container) {
+                const span = document.createElement("span");
+                span.className = "editor-link-item";
+                span.dataset.label = "GitHub";
+                span.innerHTML = `
+                    <span class="editor-separator"> | </span>
+                    <span class="link-label font-semibold" contenteditable="true">Portfolio</span>: 
+                    <span class="link-url" contenteditable="true">https://example.com</span>
+                    <button type="button" class="btn-delete-link" title="Remove Link">×</button>
+                `;
+                container.insertBefore(span, btnAddLink);
+                span.querySelector(".link-label").focus();
+                debouncedSaveDraft();
+            }
+            return;
+        }
+    });
+
+    const btnAddExp = document.getElementById("btn-editor-add-exp");
+    if (btnAddExp) {
+        btnAddExp.addEventListener("click", () => {
+            const list = document.getElementById("editor-experience-list");
+            if (list) {
+                const entry = document.createElement("div");
+                entry.className = "editor-exp-entry editor-entry";
+                entry.innerHTML = `
+                    <div class="editor-entry-row flex justify-between">
+                        <div class="editor-entry-header-left">
+                            <span class="exp-role font-bold" contenteditable="true" placeholder="Role">Software Engineer</span>
+                            <span class="editor-separator"> at </span>
+                            <span class="exp-company font-bold" contenteditable="true" placeholder="Company">Company</span>
+                            <span class="exp-work-mode italic" contenteditable="true" placeholder="Remote/Onsite">Remote</span>
+                        </div>
+                        <div class="editor-entry-header-right flex items-center gap-sm">
+                            <span class="exp-start-date" contenteditable="true" placeholder="Start Date">Jan 2024</span>
+                            <span class="editor-separator"> — </span>
+                            <span class="exp-end-date" contenteditable="true" placeholder="End Date">Present</span>
+                            <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </div>
+                    <div class="editor-bullets-container">
+                        <ul class="editor-bullets-list">
+                            <li class="editor-bullet-item">
+                                <span class="bullet-dot">•</span>
+                                <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">Developed web features...</div>
+                                <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
+                            </li>
+                        </ul>
+                        <button type="button" class="btn-add-bullet">+ Add Bullet</button>
+                    </div>
+                    <div class="editor-entry-footer">
+                        <span class="footer-label">Technologies: </span>
+                        <span class="exp-technologies" contenteditable="true" placeholder="e.g. React, Python">Python</span>
+                    </div>
+                `;
+                list.insertBefore(entry, list.firstChild);
+                entry.querySelector(".exp-role").focus();
+                debouncedSaveDraft();
+                refreshIcons();
+            }
+        });
+    }
+
+    const btnAddProj = document.getElementById("btn-editor-add-proj");
+    if (btnAddProj) {
+        btnAddProj.addEventListener("click", () => {
+            const list = document.getElementById("editor-projects-list");
+            if (list) {
+                const entry = document.createElement("div");
+                entry.className = "editor-proj-entry editor-entry";
+                entry.innerHTML = `
+                    <div class="editor-entry-row flex justify-between">
+                        <div class="editor-entry-header-left">
+                            <span class="proj-name font-bold" contenteditable="true" placeholder="Project Name">Personal Project</span>
+                            <span class="editor-separator"> | </span>
+                            <span class="proj-link italic" contenteditable="true" placeholder="Project Link">https://github.com/...</span>
+                        </div>
+                        <div class="editor-entry-header-right flex items-center gap-sm">
+                            <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </div>
+                    <div class="proj-description-container">
+                        <div class="proj-description text-muted" contenteditable="true" placeholder="Project One-liner Description...">A cool project...</div>
+                    </div>
+                    <div class="editor-bullets-container">
+                        <ul class="editor-bullets-list">
+                            <li class="editor-bullet-item">
+                                <span class="bullet-dot">•</span>
+                                <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">Built using HTML/JS...</div>
+                                <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
+                            </li>
+                        </ul>
+                        <button type="button" class="btn-add-bullet">+ Add Bullet</button>
+                    </div>
+                    <div class="editor-entry-footer">
+                        <span class="footer-label">Technologies: </span>
+                        <span class="proj-technologies" contenteditable="true" placeholder="e.g. React, Node.js">JS</span>
+                    </div>
+                `;
+                list.insertBefore(entry, list.firstChild);
+                entry.querySelector(".proj-name").focus();
+                debouncedSaveDraft();
+                refreshIcons();
+            }
+        });
+    }
+
+    const btnAddSkillCat = document.getElementById("btn-editor-add-skill-cat");
+    if (btnAddSkillCat) {
+        btnAddSkillCat.addEventListener("click", () => {
+            const list = document.getElementById("editor-skills-categories");
+            if (list) {
+                const entry = document.createElement("div");
+                entry.className = "editor-skill-category editor-entry flex";
+                entry.innerHTML = `
+                    <span class="skill-category-name font-bold" contenteditable="true" placeholder="Category Name">New Category</span>
+                    <span class="editor-separator">: </span>
+                    <span class="skill-category-skills flex-grow" contenteditable="true" placeholder="Skills (comma separated)">Skill 1, Skill 2</span>
+                    <button type="button" class="btn-delete-entry" title="Remove Category"><i data-lucide="trash-2"></i></button>
+                `;
+                list.appendChild(entry);
+                entry.querySelector(".skill-category-name").focus();
+                debouncedSaveDraft();
+                refreshIcons();
+            }
+        });
+    }
+
+    const btnAddEdu = document.getElementById("btn-editor-add-edu");
+    if (btnAddEdu) {
+        btnAddEdu.addEventListener("click", () => {
+            const list = document.getElementById("editor-education-list");
+            if (list) {
+                const entry = document.createElement("div");
+                entry.className = "editor-edu-entry editor-entry";
+                entry.innerHTML = `
+                    <div class="editor-entry-row flex justify-between">
+                        <div class="editor-entry-header-left">
+                            <span class="edu-institution font-bold" contenteditable="true" placeholder="Institution">University Name</span>
+                            <span class="editor-separator"> — </span>
+                            <span class="edu-degree font-semibold" contenteditable="true" placeholder="Degree">B.S. CS</span>
+                        </div>
+                        <div class="editor-entry-header-right flex items-center gap-sm">
+                            <span class="edu-start-date" contenteditable="true" placeholder="Start Date">2020</span>
+                            <span class="editor-separator"> — </span>
+                            <span class="edu-end-date" contenteditable="true" placeholder="End Date">2024</span>
+                            <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </div>
+                    <div class="editor-entry-details flex gap-md">
+                        <div>
+                            <span class="footer-label">GPA: </span>
+                            <span class="edu-gpa" contenteditable="true" placeholder="Omit or e.g. 3.9">3.9</span>
+                        </div>
+                        <div class="flex-grow">
+                            <span class="footer-label">Coursework: </span>
+                            <span class="edu-coursework" contenteditable="true" placeholder="e.g. Algorithms, Databases">Data Structures</span>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(entry);
+                entry.querySelector(".edu-institution").focus();
+                debouncedSaveDraft();
+                refreshIcons();
+            }
+        });
+    }
+
+    const btnAddCert = document.getElementById("btn-editor-add-cert");
+    if (btnAddCert) {
+        btnAddCert.addEventListener("click", () => {
+            const list = document.getElementById("editor-certifications-list");
+            if (list) {
+                const entry = document.createElement("div");
+                entry.className = "editor-cert-entry editor-entry";
+                entry.innerHTML = `
+                    <div class="editor-entry-row flex justify-between">
+                        <div class="editor-entry-header-left">
+                            <span class="cert-name font-bold" contenteditable="true" placeholder="Certification Name">AWS Certified</span>
+                            <span class="editor-separator"> by </span>
+                            <span class="cert-issuer font-semibold" contenteditable="true" placeholder="Issuer">Amazon</span>
+                        </div>
+                        <div class="editor-entry-header-right flex items-center gap-sm">
+                            <span class="cert-date" contenteditable="true" placeholder="Date">2024</span>
+                            <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </div>
+                    <div class="cert-description text-muted" contenteditable="true" placeholder="Optional description...">Certified...</div>
+                `;
+                list.appendChild(entry);
+                entry.querySelector(".cert-name").focus();
+                debouncedSaveDraft();
+                refreshIcons();
+            }
+        });
+    }
+}
+
+function collectEditorData() {
+    const profile = {
+        metadata: {
+            version: 1
+        },
+        personal_info: {
+            name: "",
+            email: "",
+            phone: null,
+            links: {}
+        },
+        education: [],
+        experience: [],
+        projects: [],
+        skills: {
+            categories: {}
+        },
+        certifications: [],
+        achievements: ""
+    };
+
+    const nameEl = document.getElementById("editor-pi-name");
+    const emailEl = document.getElementById("editor-pi-email");
+    const phoneEl = document.getElementById("editor-pi-phone");
+    
+    if (nameEl) profile.personal_info.name = nameEl.textContent.trim();
+    if (emailEl) profile.personal_info.email = emailEl.textContent.trim();
+    if (phoneEl) profile.personal_info.phone = phoneEl.textContent.trim() || null;
+    
+    const linkItems = document.querySelectorAll(".editor-link-item");
+    linkItems.forEach(item => {
+        const label = item.querySelector(".link-label").textContent.trim();
+        const url = item.querySelector(".link-url").textContent.trim();
+        if (label && url) {
+            profile.personal_info.links[label] = url;
+        }
+    });
+
+    const eduEntries = document.querySelectorAll(".editor-edu-entry");
+    eduEntries.forEach(entry => {
+        const institution = entry.querySelector(".edu-institution").textContent.trim();
+        const degree = entry.querySelector(".edu-degree").textContent.trim();
+        const startDate = entry.querySelector(".edu-start-date").textContent.trim();
+        const endDate = entry.querySelector(".edu-end-date").textContent.trim();
+        const gpaText = entry.querySelector(".edu-gpa")?.textContent.trim() || "";
+        const courseworkText = entry.querySelector(".edu-coursework")?.textContent.trim() || "";
+        
+        if (institution && degree) {
+            profile.education.push({
+                institution: institution,
+                degree: degree,
+                start_date: startDate,
+                end_date: endDate,
+                gpa: gpaText ? parseFloat(gpaText) : null,
+                coursework: courseworkText ? courseworkText.split(",").map(s => s.trim()).filter(Boolean) : []
+            });
+        }
+    });
+
+    const expEntries = document.querySelectorAll(".editor-exp-entry");
+    expEntries.forEach(entry => {
+        const company = entry.querySelector(".exp-company").textContent.trim();
+        const role = entry.querySelector(".exp-role").textContent.trim();
+        const startDate = entry.querySelector(".exp-start-date").textContent.trim();
+        const endDate = entry.querySelector(".exp-end-date").textContent.trim();
+        const workMode = entry.querySelector(".exp-work-mode")?.textContent.trim() || null;
+        const techText = entry.querySelector(".exp-technologies")?.textContent.trim() || "";
+        
+        const bullets = [];
+        entry.querySelectorAll(".editor-bullet-content").forEach(b => {
+            const txt = b.textContent.trim();
+            if (txt) bullets.push(txt);
+        });
+
+        if (company && role) {
+            profile.experience.push({
+                company: company,
+                role: role,
+                start_date: startDate,
+                end_date: endDate,
+                work_mode: workMode || null,
+                bullets: bullets,
+                list_type: "bullet",
+                technologies: techText ? techText.split(",").map(s => s.trim()).filter(Boolean) : []
+            });
+        }
+    });
+
+    const projEntries = document.querySelectorAll(".editor-proj-entry");
+    projEntries.forEach(entry => {
+        const name = entry.querySelector(".proj-name").textContent.trim();
+        const description = entry.querySelector(".proj-description")?.textContent.trim() || "";
+        const link = entry.querySelector(".proj-link")?.textContent.trim() || null;
+        const techText = entry.querySelector(".proj-technologies")?.textContent.trim() || "";
+        
+        const bullets = [];
+        entry.querySelectorAll(".editor-bullet-content").forEach(b => {
+            const txt = b.textContent.trim();
+            if (txt) bullets.push(txt);
+        });
+
+        if (name) {
+            profile.projects.push({
+                name: name,
+                description: description,
+                bullets: bullets,
+                list_type: "bullet",
+                technologies: techText ? techText.split(",").map(s => s.trim()).filter(Boolean) : [],
+                link: link || null
+            });
+        }
+    });
+
+    const skillCategories = document.querySelectorAll(".editor-skill-category");
+    skillCategories.forEach(cat => {
+        const catName = cat.querySelector(".skill-category-name").textContent.trim();
+        const skillsText = cat.querySelector(".skill-category-skills").textContent.trim();
+        if (catName) {
+            profile.skills.categories[catName] = skillsText ? skillsText.split(",").map(s => s.trim()).filter(Boolean) : [];
+        }
+    });
+
+    const certEntries = document.querySelectorAll(".editor-cert-entry");
+    certEntries.forEach(entry => {
+        const name = entry.querySelector(".cert-name").textContent.trim();
+        const issuer = entry.querySelector(".cert-issuer").textContent.trim();
+        const date = entry.querySelector(".cert-date").textContent.trim();
+        const description = entry.querySelector(".cert-description")?.textContent.trim() || "";
+        
+        if (name && issuer) {
+            profile.certifications.push({
+                name: name,
+                issuer: issuer,
+                date: date,
+                description: description
+            });
+        }
+    });
+
+    const achText = document.getElementById("editor-achievements-text");
+    if (achText) {
+        profile.achievements = achText.textContent.trim();
+    }
+
+    return profile;
+}
+
+function debouncedSaveDraft() {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+        saveDraftToBackend();
+    }, 1500);
+}
+
+async function saveDraftToBackend() {
+    if (!workspaceSessionId) return;
+    const profile = collectEditorData();
+    try {
+        const response = await fetch(`/api/tailor/draft/${workspaceSessionId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ profile })
+        });
+        if (response.ok) {
+            console.log("Working draft auto-saved.");
+        } else {
+            console.warn("Working draft auto-save failed.");
+        }
+    } catch (err) {
+        console.error("Auto-save network error:", err.message);
+    }
+}
+
+async function forceSaveDraft() {
+    clearTimeout(autoSaveTimeout);
+    if (!workspaceSessionId) return;
+    
+    const profile = collectEditorData();
+    const response = await fetch(`/api/tailor/draft/${workspaceSessionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile })
+    });
+    
+    if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to save draft changes.");
+    }
 }
 
 function setupWorkspaceEventsOnce() {
@@ -2572,134 +3209,12 @@ function setupWorkspaceEventsOnce() {
         });
     });
     
-    // Zoom Controls
-    const btnZoomIn = document.getElementById("zoom-in");
-    const btnZoomOut = document.getElementById("zoom-out");
-    const btnZoomReset = document.getElementById("zoom-reset");
-    
-    if (btnZoomIn) {
-        btnZoomIn.addEventListener("click", () => {
-            iframeZoom = Math.min(1.5, iframeZoom + 0.1);
-            applyZoom();
-        });
-    }
-    
-    if (btnZoomOut) {
-        btnZoomOut.addEventListener("click", () => {
-            iframeZoom = Math.max(0.6, iframeZoom - 0.1);
-            applyZoom();
-        });
-    }
-    
-    if (btnZoomReset) {
-        btnZoomReset.addEventListener("click", () => {
-            iframeZoom = 1.0;
-            applyZoom();
-        });
-    }
-    
-    // Save Snapshot
-    const btnSnapshot = document.getElementById("ws-btn-snapshot");
-    if (btnSnapshot) {
-        btnSnapshot.addEventListener("click", async () => {
-            // Use custom themed modal instead of window.prompt
-            const snapName = await openSnapshotNameModal();
-            if (!snapName || !snapName.trim()) return;
-            
-            try {
-                const response = await fetch("/api/tailor/snapshot", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        session_id: workspaceSessionId,
-                        name: snapName.trim()
-                    })
-                });
-                
-                if (!response.ok) throw new Error("Failed to save snapshot.");
-                const result = await response.json();
-                
-                if (result.status === "ok") {
-                    updateSnapshotDropdown(result.snapshots);
-                    showToast(`Snapshot "${snapName.trim()}" saved!`, "success");
-                }
-            } catch (err) {
-                showToast(err.message, "error");
-            }
-        });
-    }
-    
-    // Snapshot dropdown selection change
-    const snapDropdown = document.getElementById("ws-dropdown-snapshots");
-    if (snapDropdown) {
-        snapDropdown.addEventListener("change", async () => {
-            const snapId = snapDropdown.value;
-            if (!snapId) return;
-            
-            try {
-                const response = await fetch("/api/tailor/restore", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        session_id: workspaceSessionId,
-                        snapshot_id: snapId
-                    })
-                });
-                
-                if (!response.ok) throw new Error("Failed to restore snapshot.");
-                const result = await response.json();
-                
-                if (result.status === "ok") {
-                    workspaceActiveSnapshotId = snapId;
-                    renderWorkspaceData(result);
-                    showToast("Snapshot restored successfully!", "success");
-                }
-            } catch (err) {
-                showToast(err.message, "error");
-                snapDropdown.value = "";
-            }
-        });
-    }
-    
     // Start Over
     const btnStartOver = document.getElementById("ws-btn-startover");
     if (btnStartOver) {
         btnStartOver.addEventListener("click", (e) => {
-            if (!confirm("Are you sure you want to start over? Unsaved draft changes and snapshots will be deleted.")) {
-                e.preventDefault();
-            }
-        });
-    }
-    
-    // Save to Library
-    const btnSaveLibrary = document.getElementById("ws-btn-save-library");
-    if (btnSaveLibrary) {
-        btnSaveLibrary.addEventListener("click", async () => {
-            btnSaveLibrary.disabled = true;
-            const originalHtml = btnSaveLibrary.innerHTML;
-            btnSaveLibrary.innerHTML = `<span class="loading-spinner" style="width: 12px; height: 12px; border-width: 2px; margin: 0; display: inline-block; vertical-align: middle;"></span> Saving...`;
-            
-            try {
-                const response = await fetch("/api/tailor/save", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ session_id: workspaceSessionId })
-                });
-                
-                if (!response.ok) throw new Error("Failed to save resume.");
-                const result = await response.json();
-                
-                if (result.status === "ok") {
-                    showToast("Tailored resume saved to library!", "success");
-                    loadLibrary();
-                    window.location.hash = "#home";
-                }
-            } catch (err) {
-                showToast(err.message, "error");
-            } finally {
-                btnSaveLibrary.disabled = false;
-                btnSaveLibrary.innerHTML = originalHtml;
-                refreshIcons();
+            if (confirm("Are you sure you want to start over? Unsaved draft changes will be deleted.")) {
+                window.location.hash = "#tailor";
             }
         });
     }
@@ -2707,13 +3222,36 @@ function setupWorkspaceEventsOnce() {
     // Download PDF
     const btnDownload = document.getElementById("ws-btn-download");
     if (btnDownload) {
-        btnDownload.addEventListener("click", () => {
-            const versionType = workspaceActiveSnapshotId ? "snapshot" : "draft";
-            const versionId = workspaceActiveSnapshotId ? workspaceActiveSnapshotId : "latest";
-            window.open(`/api/tailor/preview/${workspaceSessionId}/${versionType}/${versionId}`, "_blank");
+        btnDownload.addEventListener("click", async () => {
+            btnDownload.disabled = true;
+            const originalHtml = btnDownload.innerHTML;
+            btnDownload.innerHTML = `<span class="loading-spinner" style="width: 12px; height: 12px; border-width: 2px; margin: 0; display: inline-block; vertical-align: middle;"></span> Compiling...`;
+            
+            try {
+                // Synchronously save any unsaved manual edits first
+                await forceSaveDraft();
+                
+                // Submit post request form to download
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = `/api/tailor/download/${workspaceSessionId}`;
+                document.body.appendChild(form);
+                form.submit();
+                document.body.removeChild(form);
+                showToast("Download started!", "success");
+            } catch (err) {
+                showToast(err.message, "error");
+            } finally {
+                btnDownload.disabled = false;
+                btnDownload.innerHTML = originalHtml;
+                refreshIcons();
+            }
         });
     }
     
     isEventsWired = true;
 }
+
+
+
 
