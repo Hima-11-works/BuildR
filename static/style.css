@@ -2578,6 +2578,32 @@ body.builder-active .save-bar {
     font-weight: 600;
 }
 
+/* Active workspace viewport layout modifications */
+body.workspace-active {
+    height: 100vh !important;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+}
+
+body.workspace-active .app-container {
+    max-width: none !important;
+    width: auto !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    padding: var(--space-lg) 32px 100px 32px !important; /* 32px side margins, 100px bottom padding for the bottom bar */
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.workspace-active #view-tailor-workspace {
+    display: flex !important;
+    flex-direction: column;
+    flex-grow: 1;
+    height: 0; /* allows shrinking/growing within flex parent */
+    width: 100%;
+}
+
 /* Core Workspace Panels (Stage 2) */
 .workspace-split-container {
     display: flex;
@@ -2595,14 +2621,46 @@ body.builder-active .save-bar {
     }
 }
 
+body.workspace-active .workspace-split-container {
+    flex-grow: 1;
+    height: 0;
+    min-height: 0;
+    margin-top: var(--space-sm);
+    margin-bottom: 0;
+    gap: 32px; /* increased gap between panels */
+}
+
 .workspace-left-panel {
     flex: 35;
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-lg); /* increased gap between cards */
     overflow-y: auto;
-    padding-right: var(--space-xs);
+    padding-right: var(--space-sm);
     height: 100%;
+}
+
+/* Custom scrollbars for workspace left panel and editor scroll container */
+.workspace-left-panel::-webkit-scrollbar,
+.editor-scroll-container::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.workspace-left-panel::-webkit-scrollbar-track,
+.editor-scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.workspace-left-panel::-webkit-scrollbar-thumb,
+.editor-scroll-container::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+    border-radius: var(--radius-full);
+}
+
+.workspace-left-panel::-webkit-scrollbar-thumb:hover,
+.editor-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: var(--border-accent);
 }
 
 .workspace-right-panel {
@@ -2617,7 +2675,7 @@ body.builder-active .save-bar {
     background-color: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: var(--space-md) var(--space-lg);
+    padding: var(--space-lg) var(--space-xl); /* increased padding inside cards */
     box-shadow: var(--shadow-card);
     transition: border-color var(--transition-fast);
 }
@@ -2636,6 +2694,26 @@ body.builder-active .save-bar {
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+}
+
+/* Styles for the left header */
+.workspace-left-header {
+    margin-bottom: var(--space-xs);
+    padding: 0 var(--space-xs);
+}
+
+.workspace-left-header h2 {
+    font-family: 'Sora', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-xs);
+}
+
+.workspace-left-header p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
 }
 
 .card-icon {
@@ -2809,7 +2887,7 @@ body.builder-active .save-bar {
 .prompt-chips-container {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-xs);
+    gap: var(--space-sm); /* increased gap for spacing */
     margin-bottom: var(--space-md);
 }
 
@@ -2817,7 +2895,7 @@ body.builder-active .save-bar {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-full);
-    padding: var(--space-xs) var(--space-sm);
+    padding: 6px 12px; /* increased padding for chips */
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -3004,12 +3082,12 @@ body.builder-active .save-bar {
     width: 100%;
     background-color: var(--bg-surface);
     border-top: 1px solid var(--border-strong);
-    padding: var(--space-md) var(--space-xl);
+    padding: var(--space-md) 32px; /* aligns with 32px side padding of workspace */
     display: flex;
     justify-content: space-between;
     align-items: center;
     z-index: 100;
-    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.03);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .bottom-bar-left {
@@ -3038,6 +3116,37 @@ body.builder-active .save-bar {
 .workspace-bottom-bar button, 
 .workspace-bottom-bar a {
     white-space: nowrap;
+}
+
+/* Secondary Button (Start Over) */
+.workspace-bottom-bar #ws-btn-startover {
+    background-color: transparent !important;
+    border: 1px solid var(--border-subtle) !important;
+    color: var(--text-secondary) !important;
+    transition: all var(--transition-fast) ease !important;
+}
+
+.workspace-bottom-bar #ws-btn-startover:hover {
+    border-color: var(--text-primary) !important;
+    color: var(--text-primary) !important;
+    background-color: rgba(244, 238, 230, 0.05) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Primary Button (Download Tailored Resume) */
+.workspace-bottom-bar #ws-btn-download {
+    background-color: var(--accent-solid) !important;
+    color: var(--text-on-accent) !important;
+    border: 1px solid var(--border-strong) !important;
+    transition: all var(--transition-fast) ease !important;
+}
+
+.workspace-bottom-bar #ws-btn-download:hover {
+    background-color: transparent !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-strong) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: var(--shadow-elevated) !important;
 }
 
 /* Body adjustments for workspace bottom bar */
