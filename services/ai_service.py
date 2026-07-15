@@ -227,93 +227,203 @@ def _is_canonical_member(canon: str, canon_set: set[str]) -> bool:
     return False
 
 
-def _validate_tailored_output(profile: Profile, tailored: TailoredProfile) -> None:
+def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> list[str]:
     """
-    Check that Gemini selected from the real profile rather than inventing
-    new records or skills. Rewritten bullets are allowed, but identities,
-    links, dates, certifications, and skill names must trace to the source.
-    """
-    if tailored.personal_info.to_personal_info().model_dump() != profile.personal_info.model_dump():
-        raise ValueError("Gemini changed personal information, which is not allowed.")
+    Sanitize the AI-generated tailored output **in-place** using the original
+    profile as the single source of truth.
 
+    Instead of raising on deviations, this function:
+    - Silently removes certifications, experiences, projects, and skills that
+      are not present in the original profile.
+    - Maps renamed skill category names back to the original names (fuzzy
+      match via canonical form) and drops any that cannot be matched.
+    - Strips invented technologies from experience and project entries.
+    - Restores the original project link if Gemini changed it.
+    - Silently resets personal_info to the original if Gemini tampered with it.
+
+    Returns a list of human-readable warning strings describing every
+    correction made (useful for server-side logging / debugging).
+
+    Raises
+    ------
+    ValueError
+        Only for truly unrecoverable structural errors (currently none;
+        all known AI deviations are recoverable).
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    warnings: list[str] = []
+
+    # ── 1. Personal info — silently restore from original ────────
+    original_pi = profile.personal_info
+    tailored_pi = tailored.personal_info.to_personal_info()
+    if tailored_pi.model_dump() != original_pi.model_dump():
+        warnings.append("Gemini altered personal_info — restored from original profile.")
+        from models.tailored_profile import TailoredLink, TailoredPersonalInfo
+        tailored.personal_info = TailoredPersonalInfo(
+            name=original_pi.name,
+            email=original_pi.email,
+            phone=original_pi.phone,
+            links=[
+                TailoredLink(label=label, url=url)
+                for label, url in original_pi.links.items()
+            ],
+        )
+
+    # ── 2. Education — drop entries not in original ───────────────
     original_education = {edu.model_dump_json() for edu in profile.education}
-    for edu in tailored.education:
-        if edu.model_dump_json() not in original_education:
-            raise ValueError(f"Gemini returned an education entry that is not in the profile: {edu.institution}")
+    before = len(tailored.education)
+    tailored.education = [
+        edu for edu in tailored.education
+        if edu.model_dump_json() in original_education
+    ]
+    dropped = before - len(tailored.education)
+    if dropped:
+        warnings.append(f"Removed {dropped} education entry/entries not found in the original profile.")
 
+    # ── 3. Certifications — drop entries not in original ─────────
     original_certifications = {cert.model_dump_json() for cert in profile.certifications}
-    for cert in tailored.certifications:
-        if cert.model_dump_json() not in original_certifications:
-            raise ValueError(f"Gemini returned a certification that is not in the profile: {cert.name}")
+    before = len(tailored.certifications)
+    tailored.certifications = [
+        cert for cert in tailored.certifications
+        if cert.model_dump_json() in original_certifications
+    ]
+    dropped = before - len(tailored.certifications)
+    if dropped:
+        warnings.append(f"Removed {dropped} certification(s) not found in the original profile.")
 
+    # ── 4. Experience — drop unknown entries, strip invented tech ─
     original_experience = {
         _as_key(exp.company, exp.role, exp.start_date, exp.end_date): exp
         for exp in profile.experience
     }
+    kept_experience = []
     for exp in tailored.experience:
         key = _as_key(exp.company, exp.role, exp.start_date, exp.end_date)
         original = original_experience.get(key)
         if original is None:
-            raise ValueError(f"Gemini returned an experience that is not in the profile: {exp.company} - {exp.role}")
-        original_tech = {_canon_skill(tech) for tech in original.technologies if _canon_skill(tech)}
-        invented_tech = [
-            tech for tech in exp.technologies
-            if _canon_skill(tech) and not _is_canonical_member(_canon_skill(tech), original_tech)
-        ]
-        if invented_tech:
-            raise ValueError(
-                f"Gemini added technologies not present in {exp.company}: {', '.join(invented_tech)}"
+            warnings.append(
+                f"Removed unknown experience '{exp.company} – {exp.role}' introduced by Gemini."
             )
+            continue
+        # Strip any invented technologies.
+        original_tech = {_canon_skill(t) for t in original.technologies if _canon_skill(t)}
+        before_tech = list(exp.technologies)
+        exp.technologies = [
+            t for t in exp.technologies
+            if not _canon_skill(t) or _is_canonical_member(_canon_skill(t), original_tech)
+        ]
+        invented = [t for t in before_tech if t not in exp.technologies]
+        if invented:
+            warnings.append(
+                f"Stripped invented technologies from '{exp.company}': {', '.join(invented)}"
+            )
+        kept_experience.append(exp)
+    tailored.experience = kept_experience
 
+    # ── 5. Projects — drop unknown entries, fix links, strip tech ─
     original_projects = {
-        _plain(project.name).casefold(): project
-        for project in profile.projects
+        _plain(p.name).casefold(): p
+        for p in profile.projects
     }
+    kept_projects = []
     for project in tailored.projects:
         original = original_projects.get(_plain(project.name).casefold())
         if original is None:
-            raise ValueError(f"Gemini returned a project that is not in the profile: {project.name}")
+            warnings.append(
+                f"Removed unknown project '{project.name}' introduced by Gemini."
+            )
+            continue
+        # Restore original link if Gemini changed it.
         if _plain(project.link) != _plain(original.link):
-            raise ValueError(f"Gemini changed the project link for: {project.name}")
-        original_tech = {_canon_skill(tech) for tech in original.technologies if _canon_skill(tech)}
-        invented_tech = [
-            tech for tech in project.technologies
-            if _canon_skill(tech) and not _is_canonical_member(_canon_skill(tech), original_tech)
+            warnings.append(
+                f"Restored original link for project '{project.name}' (Gemini changed it)."
+            )
+            project.link = original.link
+        # Strip invented technologies.
+        original_tech = {_canon_skill(t) for t in original.technologies if _canon_skill(t)}
+        before_tech = list(project.technologies)
+        project.technologies = [
+            t for t in project.technologies
+            if not _canon_skill(t) or _is_canonical_member(_canon_skill(t), original_tech)
         ]
-        if invented_tech:
-            raise ValueError(
-                f"Gemini added technologies not present in {project.name}: {', '.join(invented_tech)}"
+        invented = [t for t in before_tech if t not in project.technologies]
+        if invented:
+            warnings.append(
+                f"Stripped invented technologies from project '{project.name}': {', '.join(invented)}"
+            )
+        kept_projects.append(project)
+    tailored.projects = kept_projects
+
+    # ── 6. Skills — remap renamed categories, drop invented skills ─
+    # Build two lookups over the *original* categories:
+    #   canon_to_original_name  – canonical form  -> original display name
+    #   canon_to_skill_set      – canonical form  -> set of canonical skill strings
+    canon_to_original_name: dict[str, str] = {}
+    canon_to_skill_set: dict[str, set[str]] = {}
+    for cat_name, skills_list in profile.skills.categories.items():
+        ck = _canon_skill(cat_name)
+        canon_to_original_name[ck] = cat_name
+        canon_to_skill_set[ck] = {_canon_skill(s) for s in skills_list if _canon_skill(s)}
+
+    sanitized_categories = []
+    for skill_category in tailored.skills.categories:
+        cat_name = skill_category.category
+        canon_cat = _canon_skill(cat_name)
+
+        # Try to match the Gemini category name to an original one.
+        matched_ck: str | None = None
+        if canon_cat in canon_to_original_name:
+            matched_ck = canon_cat
+        else:
+            # Broader fallback: substring or case-insensitive match.
+            plain_cat = _plain(cat_name).casefold()
+            for ck, orig_name in canon_to_original_name.items():
+                if plain_cat == _plain(orig_name).casefold():
+                    matched_ck = ck
+                    break
+            if matched_ck is None:
+                # Last resort: check if either name is a substring of the other.
+                for ck, orig_name in canon_to_original_name.items():
+                    if plain_cat in _plain(orig_name).casefold() or _plain(orig_name).casefold() in plain_cat:
+                        matched_ck = ck
+                        break
+
+        if matched_ck is None:
+            warnings.append(
+                f"Removed unknown skill category '{cat_name}' introduced by Gemini."
+            )
+            continue
+
+        # Restore the original category name.
+        original_cat_name = canon_to_original_name[matched_ck]
+        if skill_category.category != original_cat_name:
+            warnings.append(
+                f"Renamed skill category '{skill_category.category}' -> '{original_cat_name}'."
+            )
+            skill_category.category = original_cat_name
+
+        # Strip invented skills within this category.
+        allowed_skills = canon_to_skill_set[matched_ck]
+        before_skills = list(skill_category.skills)
+        skill_category.skills = [
+            s for s in skill_category.skills
+            if not _canon_skill(s) or _is_canonical_member(_canon_skill(s), allowed_skills)
+        ]
+        invented_skills = [s for s in before_skills if s not in skill_category.skills]
+        if invented_skills:
+            warnings.append(
+                f"Removed invented skills from '{original_cat_name}': {', '.join(invented_skills)}"
             )
 
-    # Build canonical lookup of category -> set(canonical_skill_name).
-    # This lets the validator accept harmless wording variants (e.g. React.js vs React,
-    # LLMs vs LLMsLLMs) while still rejecting genuinely new skills that have no
-    # canonical match in the master profile.
-    original_skills = {
-        _canon_skill(category): {_canon_skill(s) for s in skills if _canon_skill(s)}
-        for category, skills in profile.skills.categories.items()
-    }
-    for skill_category in tailored.skills.categories:
-        category = skill_category.category
-        canon_category = _canon_skill(category)
-        original_category = original_skills.get(canon_category)
-        if original_category is None:
-            # Fall back to case-insensitive equality for cosmetic differences in
-            # the category name itself (e.g. "Programming Languages" vs
-            # "Programming language").
-            original_category = original_skills.get(_plain(category).casefold())
-        if original_category is None:
-            raise ValueError(
-                f"Gemini added a skill category not present in the profile: {category}"
-            )
-        invented_skills = [
-            skill for skill in skill_category.skills
-            if _canon_skill(skill) and not _is_canonical_member(_canon_skill(skill), original_category)
-        ]
-        if invented_skills:
-            raise ValueError(
-                f"Gemini added skills not present in {category}: {', '.join(invented_skills)}"
-            )
+        sanitized_categories.append(skill_category)
+    tailored.skills.categories = sanitized_categories
+
+    # Log all corrections at DEBUG level for server-side visibility.
+    for w in warnings:
+        _log.debug("[sanitize_tailored_output] %s", w)
+
+    return warnings
 
 
 # ── The system prompt ────────────────────────────────────────
@@ -457,7 +567,7 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     # If parsing fails (should be impossible with constrained
     # decoding, but defense in depth), this will raise.
     tailored: TailoredProfile = response.parsed
-    _validate_tailored_output(profile, tailored)
+    _sanitize_tailored_output(profile, tailored)
 
     return tailored
 
@@ -645,7 +755,7 @@ REQUIRED OUTPUT SCHEMA (TailoringResult):
     )
 
     result: TailoringResult = response.parsed
-    _validate_tailored_output(profile, result.profile)
+    _sanitize_tailored_output(profile, result.profile)
     return result
 
 
@@ -743,7 +853,7 @@ Please modify the CURRENT TAILORED RESUME DRAFT to satisfy the request. Ensure a
     )
 
     result: TailoringResult = response.parsed
-    _validate_tailored_output(master_profile, result.profile)
+    _sanitize_tailored_output(master_profile, result.profile)
     return result
 
 

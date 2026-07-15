@@ -1,0 +1,209 @@
+%% ──────────────────────────────────────────────────────────────
+%% templates_latex/resume.tex — Jinja2 template that renders to LaTeX
+%% ──────────────────────────────────────────────────────────────
+%%
+%% CUSTOM JINJA2 DELIMITERS
+%% ────────────────────────
+%% This template does NOT use standard {{ }}/{% %} Jinja2 syntax.
+%% Instead it uses delimiters that look like LaTeX commands:
+%%
+%%          — insert a variable's value
+%%           — end a logic block
+%%          — end loop
+%%          — template comment (stripped from output)
+%%
+%% WHY?  LaTeX uses { } everywhere (\textbf{bold}, \begin{itemize}).
+%% If we used Jinja2's default {{ }}, the template engine would
+%% misparse LaTeX braces as template tags, causing cryptic errors.
+%% The \COMMAND{...} convention is unambiguous because no real LaTeX
+%% command is named \VAR, \BLOCK, or \COMMENT.
+%%
+%% ALL USER DATA IS PRE-ESCAPED
+%% ────────────────────────────
+%% Before this template is rendered, every string from the user's
+%% profile has already been run through escape_latex(), which
+%% replaces LaTeX special characters (& % $ # _ { } ~ ^ \) with
+%% safe equivalents (\& \% \$ etc.).  This means we can safely
+%% inject  without worrying about compilation errors
+%% from characters like & or #.
+%% ──────────────────────────────────────────────────────────────
+
+\documentclass[11pt, letterpaper]{article}
+
+%% ── Packages ─────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}          % UTF-8 input encoding
+\usepackage[T1]{fontenc}             % proper output glyph encoding
+\usepackage[scaled=0.92]{helvet}     % Helvetica font (clean sans-serif)
+\renewcommand{\familydefault}{\sfdefault} % Set sans-serif as default
+\usepackage[margin=0.5in]{geometry}  % tight but readable margins
+\usepackage{enumitem}                % customise list spacing
+\usepackage{titlesec}                % customise section headings
+\usepackage{hyperref}                % clickable links
+\usepackage{xcolor}                  % colours for links
+\usepackage{marvosym}            % Classic icons for contact info
+\usepackage[normalem]{ulem}          % For clean underlines
+
+%% ── Hyperlink styling ────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue!70!black,
+    pdfborder={0 0 0},
+}
+
+%% ── Section heading format ───────────────────────────────────
+%% \titleformat{command}{format}{label}{sep}{before-code}[after-code]
+%% We use a simple bold heading (without small caps) with a rule underneath.
+\titleformat{\section}
+  {\large\bfseries\raggedright}          % format
+  {}                                      % label (none)
+  {0em}                                   % separator
+  {}                                      % before-code
+  [\titlerule]                            % after-code: horizontal rule
+
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+
+%% ── Remove page numbers ─────────────────────────────────────
+\pagestyle{empty}
+
+%% ── Tighter list spacing ────────────────────────────────────
+\setlist[itemize]{label=\textbullet, nosep, leftmargin=1.5em, topsep=2pt}
+
+%% ── Zero Paragraph Indentation ──────────────────────────────
+\setlength{\parindent}{0pt}
+
+%% ── Unicode Rupee Symbol Mapping ────────────────────────────
+\usepackage{tfrupee}
+\usepackage{newunicodechar}
+\newunicodechar{₹}{\rupee}
+
+%% ══════════════════════════════════════════════════════════════
+%%  DOCUMENT BEGIN
+%% ══════════════════════════════════════════════════════════════
+\begin{document}
+
+%% ── Header ───────────────────────────────────────────────────
+\begin{center}
+    {\LARGE\bfseries John Developer}\\[5pt]
+    \small
+    %
+        \Mobilefone\ 123-456-7890%
+    %
+    %
+         \quad %
+        \Letter\ \href{mailto:john.dev@example.com}{john.dev@example.com}%
+    %
+    %
+        \quad \textbullet\ \href{https://github.com/johndev}{GitHub}%
+    %
+        \quad \textbullet\ \href{https://example.com}{Portfolio}%
+    
+\end{center}
+
+\vspace{-4pt}
+
+
+%
+%% ── Education ────────────────────────────────────────────────
+\section{Education}
+%
+\textbf{Kalinga Institute of Industrial College} \hfill Aug 2024 -- May 2028 \\
+\textit{B.Tech} \textit{(CGPA: 8.38)}%
+%
+ \hfill CSE (AI-ML)%
+%
+%
+%
+
+
+
+%
+%% ── Experience ───────────────────────────────────────────────
+\section{Experience}
+%
+\textbf{Swastik Agency} \hfill Jan 2024 -- Present \\
+\textit{HouseHusband} \ | \ \textit{Python}%
+%
+ \hfill onsite%
+%
+
+\begin{itemize}[label=\textasteriskcentered, leftmargin=1.5em]
+
+    \item made best cookies  in the world.
+
+    \item made icereams.
+
+    \item learnt gardening and became vegetarian.
+
+\end{itemize}
+%
+
+\vspace{4pt}
+%
+%
+\textbf{Tech Corp} \hfill 2022 -- Present \\
+\textit{Junior Engineer} \ | \ \textit{Artificial Intelligence (AI), Software Infrastructure}%
+%
+ \hfill Hybrid%
+%
+
+\begin{itemize}[label=\textasteriskcentered, leftmargin=1.5em]
+
+    \item Developed and maintained web applications utilizing React, contributing to front-end development initiatives.
+
+\end{itemize}
+%
+%
+%
+
+
+
+%
+%% ── Projects ─────────────────────────────────────────────────
+\section{Projects}
+%
+\textbf{Competitive Programming Ally} \ | \ \href{https://github.com/0xPolybit/cp-ally-ide}{\textbf{(GitHub)}} \ | \ \textit{Java, Java Swing, File I/O}%
+%
+\\ you can do codeforeces here it self%
+%
+
+\begin{itemize}[label=\textasteriskcentered, leftmargin=1.5em]
+
+    \item Developed a specialized IDE for competitive programming that automates the process of fetching and testing sample test cases.
+
+    \item Implemented a custom testing engine for real-time output comparison, significantly reducing debugging time during contests.
+
+    \item Designed a streamlined user interface using Java Swing to minimize context switching and improve coding efficiency.
+
+\end{itemize}
+%
+%
+%
+
+
+
+%
+%% ── Skills ───────────────────────────────────────────────────
+\section{Technical Skills}
+%
+\textbf{Artificial Intelligence:} LLMsLLMs \\ %
+%
+\textbf{Programming Languages:} JavaScript, TypeScript, JAVA, Python \\ %
+%
+\textbf{Software and Tools:} Git, GitHub \\ %
+%
+\textbf{Web Frameworks:} React.js, Next.js, Vite.js%
+%
+
+
+
+
+
+
+%
+%% ── Achievements ─────────────────────────────────────────────
+\section{Achievements}
+Secured 2nd place in the SDIS Competitive Programming Contest, winning a cash prize of ₹5,000
+
+
+\end{document}

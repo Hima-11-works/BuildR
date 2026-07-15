@@ -3231,13 +3231,48 @@ function setupWorkspaceEventsOnce() {
                 // Synchronously save any unsaved manual edits first
                 await forceSaveDraft();
                 
-                // Submit post request form to download
-                const form = document.createElement("form");
-                form.method = "POST";
-                form.action = `/api/tailor/download/${workspaceSessionId}`;
-                document.body.appendChild(form);
-                form.submit();
-                document.body.removeChild(form);
+                // Fetch the PDF using a POST request
+                const response = await fetch(`/api/tailor/download/${workspaceSessionId}`, {
+                    method: "POST"
+                });
+                
+                if (!response.ok) {
+                    // Try to read the error message as JSON
+                    let errorMsg = "Failed to download resume.";
+                    try {
+                        const errData = await response.json();
+                        errorMsg = errData.error || errorMsg;
+                    } catch (e) {
+                        // Fallback to plain text if not JSON
+                        const text = await response.text();
+                        if (text) errorMsg = text;
+                    }
+                    throw new Error(errorMsg);
+                }
+                
+                // Treat the response as a binary Blob
+                const blob = await response.blob();
+                
+                // Create a File object so the browser has explicit filename metadata
+                const filename = `BuildR_Tailored_${workspaceSessionId}.pdf`;
+                const file = new File([blob], filename, { type: "application/pdf" });
+                
+                // Create an object URL from the File
+                const url = window.URL.createObjectURL(file);
+                
+                // Trigger the download with the .pdf extension
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                // Clean up the object URL after a short delay to give the browser time to initiate the download
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                }, 2000);
+                
                 showToast("Download started!", "success");
             } catch (err) {
                 showToast(err.message, "error");

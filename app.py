@@ -747,13 +747,19 @@ def api_tailor_download(session_id):
             job_description=job_description,
         )
 
+        # Get path to the saved PDF in the library to ensure we return the persistent, isolated copy
+        saved_pdf_path = get_resume_path(resume_id, "pdf")
+
         # Return the PDF for download
-        return send_file(
-            pdf_path,
+        response = send_file(
+            saved_pdf_path,
             mimetype="application/pdf",
             as_attachment=True,
             download_name=f"BuildR_Tailored_{resume_id}.pdf",
         )
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = f"attachment; filename=BuildR_Tailored_{resume_id}.pdf"
+        return response
 
     except PdfCompilationError as e:
         print(f"PDF compilation error (download): {e}")
