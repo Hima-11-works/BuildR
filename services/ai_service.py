@@ -575,6 +575,8 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
 def parse_resume_text(text: str) -> Profile:
     """
     Send the raw resume text to Gemini and parse it into a structured Profile Pydantic object.
+    After parsing, list-like free-text fields (achievements, certification descriptions) are
+    post-processed into semantic HTML so the rich-text editor receives properly formatted content.
     """
     system_instruction = (
         "You are an expert AI resume parser. Your job is to extract all information from the provided resume text "
@@ -583,7 +585,16 @@ def parse_resume_text(text: str) -> Profile:
         "preserving all dates, details, bullets, and tools. Do not invent any information that does not exist in the resume text.\n\n"
         "Crucial formatting rule: Clean up any PDF extraction artifacts like raw ligatures (e.g. replace '\\ufb01' or similar raw characters with 'fi', "
         "replace '\\ufb03' with 'ffi', replace '\\ufb02' with 'fl') and fix word spacing issues (e.g. 'JA V A' -> 'JAVA', 'F rameworks' -> 'Frameworks', "
-        "'T echnologies' -> 'Technologies'). Ensure all output strings have proper spelling, casing, and spacing."
+        "'T echnologies' -> 'Technologies'). Ensure all output strings have proper spelling, casing, and spacing.\n\n"
+        "List formatting rules (IMPORTANT):\n"
+        "- For the 'achievements' field: if the source contains multiple distinct achievements, "
+        "achievements, or bullet points, return them as separate entries joined by newlines (one achievement per line). "
+        "Do NOT collapse them into a single run-on sentence. Preserve any leading markers (e.g. '• ', '- ', '1. ') "
+        "exactly as they appear in the source so downstream formatting can detect the list type.\n"
+        "- For certification 'description' fields: apply the same rule — one point per line, preserving "
+        "original list markers if present.\n"
+        "- For experience bullets and project bullets: each bullet point must be its own separate string in the list. "
+        "Never merge multiple bullet points into one string."
     )
 
     response = _get_client().models.generate_content(
@@ -598,7 +609,15 @@ def parse_resume_text(text: str) -> Profile:
     )
 
     tailored: TailoredProfile = response.parsed
-    return tailored.to_profile()
+    profile = tailored.to_profile()
+
+    # Post-process rich-text fields: convert plain-text list patterns to HTML
+    # so that achievements and certification descriptions render as proper lists
+    # in the rich-text editor instead of collapsing into a single paragraph.
+    from services.parser_service import postprocess_parsed_profile
+    postprocess_parsed_profile(profile)
+
+    return profile
 
 
 # ── Job Analysis Schema and Service ───────────────────────────
