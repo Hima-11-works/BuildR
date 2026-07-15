@@ -2337,6 +2337,13 @@ async function handleChatSubmit(e) {
     if (!msg) return;
     
     input.value = "";
+    if (input.tagName === "TEXTAREA") {
+        input.style.height = "";
+    }
+    const charCounter = document.getElementById("chat-char-counter");
+    if (charCounter) {
+        charCounter.textContent = "0/500";
+    }
     input.disabled = true;
     const sendBtn = document.getElementById("ws-chat-send");
     sendBtn.disabled = true;
@@ -3204,10 +3211,38 @@ function setupWorkspaceEventsOnce() {
             const input = document.getElementById("ws-chat-input");
             if (input) {
                 input.value = prompt;
+                if (input.tagName === "TEXTAREA") {
+                    input.style.height = "auto";
+                    input.style.height = input.scrollHeight + "px";
+                }
+                const charCounter = document.getElementById("chat-char-counter");
+                if (charCounter) {
+                    charCounter.textContent = `${prompt.length}/500`;
+                }
                 handleChatSubmit();
             }
         });
     });
+
+    // Auto-resize, Enter-submit, and character counter for chat textarea
+    const chatInput = document.getElementById("ws-chat-input");
+    const charCounter = document.getElementById("chat-char-counter");
+    if (chatInput && chatInput.tagName === "TEXTAREA") {
+        chatInput.addEventListener("input", function () {
+            this.style.height = "auto";
+            this.style.height = this.scrollHeight + "px";
+            if (charCounter) {
+                charCounter.textContent = `${this.value.length}/500`;
+            }
+        });
+        chatInput.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const sendBtn = document.getElementById("ws-chat-send");
+                if (sendBtn) sendBtn.click();
+            }
+        });
+    }
     
     // Start Over
     const btnStartOver = document.getElementById("ws-btn-startover");

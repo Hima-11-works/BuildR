@@ -2590,7 +2590,7 @@ body.workspace-active .app-container {
     width: auto !important;
     height: 100vh !important;
     margin: 0 !important;
-    padding: var(--space-lg) 32px 100px 32px !important; /* 32px side margins, 100px bottom padding for the bottom bar */
+    padding: var(--space-md) 32px 0 32px !important; /* 32px side margins, 0 bottom padding for normal flex layout, var(--space-md) (16px) top padding */
     box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
@@ -2608,10 +2608,10 @@ body.workspace-active #view-tailor-workspace {
 .workspace-split-container {
     display: flex;
     flex-direction: column;
-    gap: var(--space-lg);
+    gap: var(--space-md);
     margin-top: var(--space-md);
-    margin-bottom: var(--space-2xl);
-    height: calc(100vh - 220px);
+    margin-bottom: var(--space-xl);
+    height: calc(100vh - 180px);
     min-height: 520px;
 }
 
@@ -2625,16 +2625,16 @@ body.workspace-active .workspace-split-container {
     flex-grow: 1;
     height: 0;
     min-height: 0;
-    margin-top: var(--space-sm);
+    margin-top: var(--space-xs);
     margin-bottom: 0;
-    gap: 32px; /* increased gap between panels */
+    gap: 24px; /* clean balanced gap between panels */
 }
 
 .workspace-left-panel {
-    flex: 35;
+    flex: 32; /* aligned exactly as requested */
     display: flex;
     flex-direction: column;
-    gap: var(--space-lg); /* increased gap between cards */
+    gap: var(--space-md); /* clean compact gap between cards */
     overflow-y: auto;
     padding-right: var(--space-sm);
     height: 100%;
@@ -2664,18 +2664,22 @@ body.workspace-active .workspace-split-container {
 }
 
 .workspace-right-panel {
-    flex: 65;
+    flex: 68; /* aligned exactly as requested */
     height: 100%;
     min-height: 450px;
     display: flex;
     flex-direction: column;
 }
 
+body.workspace-active .workspace-right-panel {
+    min-height: 0 !important; /* prevent fixed min-height from breaking viewport flex bounds */
+}
+
 .workspace-panel-card {
     background-color: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    padding: var(--space-lg) var(--space-xl); /* increased padding inside cards */
+    padding: var(--space-md) var(--space-lg); /* cleaner compact card padding */
     box-shadow: var(--shadow-card);
     transition: border-color var(--transition-fast);
 }
@@ -2950,14 +2954,124 @@ body.workspace-active .workspace-split-container {
     border-bottom-left-radius: 2px;
 }
 
-.chat-input-row {
-    display: flex;
-    gap: var(--space-sm);
+.chat-divider {
+    height: 1px;
+    background-color: var(--border-subtle);
+    margin: var(--space-md) 0;
+    opacity: 0.7;
 }
 
-.chat-input-row input {
-    flex: 1;
-    min-width: 0;
+.chat-instructions-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-sm);
+}
+
+.chat-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-input);
+    padding: var(--space-xs);
+    width: 100%;
+    margin-bottom: var(--space-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.chat-input-wrapper:focus-within {
+    border-color: var(--accent-solid);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.chat-input-wrapper textarea {
+    width: 100%;
+    height: 90px;
+    min-height: 60px;
+    max-height: 200px;
+    resize: vertical;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding: var(--space-sm);
+    box-shadow: none !important;
+}
+
+.chat-input-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xs) var(--space-sm);
+    border-top: 1px dashed var(--border-subtle);
+}
+
+.char-counter {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.btn-chat-send {
+    background: none;
+    border: none;
+    color: var(--accent-solid);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.btn-chat-send:hover {
+    background-color: var(--border-subtle);
+    color: var(--accent-hover);
+}
+
+.btn-chat-send:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.chat-tip-text {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-top: var(--space-xs);
+    padding: 0 var(--space-xs);
+}
+
+.chat-tip-text .tip-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    color: var(--warning);
+}
+
+.bottom-bar-center {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.save-status-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--success);
 }
 
 .chat-input-row button {
@@ -3082,12 +3196,24 @@ body.workspace-active .workspace-split-container {
     width: 100%;
     background-color: var(--bg-surface);
     border-top: 1px solid var(--border-strong);
-    padding: var(--space-md) 32px; /* aligns with 32px side padding of workspace */
+    padding: 10px 32px; /* reduced top/bottom padding to make it a slim footer */
     display: flex;
     justify-content: space-between;
     align-items: center;
     z-index: 100;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+}
+
+body.workspace-active .workspace-bottom-bar {
+    position: relative !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: auto !important;
+    margin: 0 -32px !important;
+    padding: 12px 32px !important;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15) !important;
+    z-index: 10 !important;
+    flex-shrink: 0 !important;
 }
 
 .bottom-bar-left {
@@ -3151,7 +3277,7 @@ body.workspace-active .workspace-split-container {
 
 /* Body adjustments for workspace bottom bar */
 body.workspace-active {
-    padding-bottom: 90px;
+    padding-bottom: 0 !important; /* no body padding needed since footer is static in-flow flex item */
 }
 
 /* ── Snapshot Name Modal ───────────────────────────────────────── */

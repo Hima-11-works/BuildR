@@ -630,15 +630,28 @@
                             <button type="button" class="prompt-chip" data-prompt="Use stronger action verbs">Stronger action verbs</button>
                             <button type="button" class="prompt-chip" data-prompt="Make this more suitable for software engineering internships">For SWE internships</button>
                         </div>
+                        
+                        <div class="chat-divider"></div>
+                        
+                        <h4 class="chat-instructions-title">AI EDIT INSTRUCTIONS</h4>
+                        
                         <div id="ws-chat-history" class="chat-history-box">
                             <!-- Conversation thread -->
                         </div>
-                        <form id="ws-chat-form" class="chat-input-row">
-                            <input type="text" id="ws-chat-input" placeholder="Ask AI to refine (e.g. 'Use stronger action verbs')..." required>
-                            <button type="submit" class="btn-primary" id="ws-chat-send" aria-label="Send message">
-                                <i data-lucide="send"></i>
-                            </button>
+                        <form id="ws-chat-form" class="chat-input-wrapper">
+                            <textarea id="ws-chat-input" placeholder="Ask AI to refine (e.g. 'Use stronger action verbs')..." required maxlength="500"></textarea>
+                            <div class="chat-input-footer">
+                                <span id="chat-char-counter" class="char-counter">0/500</span>
+                                <button type="submit" class="btn-chat-send" id="ws-chat-send" aria-label="Send message">
+                                    <i data-lucide="send"></i>
+                                </button>
+                            </div>
                         </form>
+
+                        <div class="chat-tip-text">
+                            <i data-lucide="lightbulb" class="tip-icon"></i>
+                            <span>Be specific about what you want improved. The more details, the better the results.</span>
+                        </div>
                     </div>
  
                 </div><!-- /.workspace-left-panel -->
@@ -660,6 +673,10 @@
                     <button type="button" class="btn-secondary" id="ws-btn-startover">
                         <i data-lucide="arrow-left" class="btn-icon"></i> Start Over
                     </button>
+                </div>
+                <div class="bottom-bar-center">
+                    <i data-lucide="check-circle" class="save-status-icon"></i>
+                    <span>All changes are saved automatically</span>
                 </div>
                 <div class="bottom-bar-right">
                     <button type="button" class="btn-primary" id="ws-btn-download">
