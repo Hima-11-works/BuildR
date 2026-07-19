@@ -3863,3 +3863,25 @@ body.workspace-active {
     }
 }
 
+/* Helper header above resume editor preview */
+.preview-header-helper {
+    max-width: 800px;
+    margin: 0 auto var(--space-md) auto;
+    text-align: left;
+}
+
+.preview-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-xs) 0;
+}
+
+.preview-subtitle {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
