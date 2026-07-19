@@ -1,0 +1,198 @@
+%% ──────────────────────────────────────────────────────────────
+%% templates_latex/resume.tex — Jinja2 template that renders to LaTeX
+%% ──────────────────────────────────────────────────────────────
+%%
+%% CUSTOM JINJA2 DELIMITERS
+%% ────────────────────────
+%% This template does NOT use standard {{ }}/{% %} Jinja2 syntax.
+%% Instead it uses delimiters that look like LaTeX commands:
+%%
+%%   \VAR{ variable }       — insert a variable's value
+%%   \BLOCK{ if cond }      — start a logic block
+%%   \BLOCK{ endif }        — end a logic block
+%%   \BLOCK{ for x in y }   — loop
+%%   \BLOCK{ endfor }       — end loop
+%%   \COMMENT{ note }       — template comment (stripped from output)
+%%
+%% WHY?  LaTeX uses { } everywhere (\textbf{bold}, \begin{itemize}).
+%% If we used Jinja2's default {{ }}, the template engine would
+%% misparse LaTeX braces as template tags, causing cryptic errors.
+%% The \COMMAND{...} convention is unambiguous because no real LaTeX
+%% command is named \VAR, \BLOCK, or \COMMENT.
+%%
+%% ALL USER DATA IS PRE-ESCAPED
+%% ────────────────────────────
+%% Before this template is rendered, every string from the user's
+%% profile has already been run through escape_latex(), which
+%% replaces LaTeX special characters (& % $ # _ { } ~ ^ \) with
+%% safe equivalents (\& \% \$ etc.).  This means we can safely
+%% inject \VAR{ name } without worrying about compilation errors
+%% from characters like & or #.
+%% ──────────────────────────────────────────────────────────────
+
+\documentclass[11pt, letterpaper]{article}
+
+%% ── Packages ─────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}          % UTF-8 input encoding
+\usepackage[T1]{fontenc}             % proper output glyph encoding
+\usepackage[scaled=0.92]{helvet}     % Helvetica font (clean sans-serif)
+\renewcommand{\familydefault}{\sfdefault} % Set sans-serif as default
+\usepackage[margin=0.5in]{geometry}  % tight but readable margins
+\usepackage{enumitem}                % customise list spacing
+\usepackage{titlesec}                % customise section headings
+\usepackage{hyperref}                % clickable links
+\usepackage{xcolor}                  % colours for links
+\usepackage{marvosym}            % Classic icons for contact info
+\usepackage[normalem]{ulem}          % For clean underlines
+
+%% ── Hyperlink styling ────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue!70!black,
+    pdfborder={0 0 0},
+}
+
+%% ── Section heading format ───────────────────────────────────
+%% \titleformat{command}{format}{label}{sep}{before-code}[after-code]
+%% We use a simple bold heading (without small caps) with a rule underneath.
+\titleformat{\section}
+  {\large\bfseries\raggedright}          % format
+  {}                                      % label (none)
+  {0em}                                   % separator
+  {}                                      % before-code
+  [\titlerule]                            % after-code: horizontal rule
+
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+
+%% ── Remove page numbers ─────────────────────────────────────
+\pagestyle{empty}
+
+%% ── Tighter list spacing ────────────────────────────────────
+\setlist[itemize]{label=\textbullet, nosep, leftmargin=1.5em, topsep=2pt}
+
+%% ── Zero Paragraph Indentation ──────────────────────────────
+\setlength{\parindent}{0pt}
+
+%% ── Unicode Rupee Symbol Mapping ────────────────────────────
+\usepackage{tfrupee}
+\usepackage{newunicodechar}
+\newunicodechar{₹}{\rupee}
+
+%% ══════════════════════════════════════════════════════════════
+%%  DOCUMENT BEGIN
+%% ══════════════════════════════════════════════════════════════
+\begin{document}
+
+%% ── Header ───────────────────────────────────────────────────
+\begin{center}
+    {\LARGE\bfseries \VAR{ personal_info.name }}\\[5pt]
+    \small
+    \BLOCK{ if personal_info.phone }%
+        \Mobilefone\ \VAR{ personal_info.phone }%
+    \BLOCK{ endif }%
+    \BLOCK{ if personal_info.email }%
+        \BLOCK{ if personal_info.phone } \quad \BLOCK{ endif }%
+        \Letter\ \href{mailto:\VAR{ personal_info.email }}{\VAR{ personal_info.email }}%
+    \BLOCK{ endif }%
+    \BLOCK{ for label, url in personal_info.links.items() }%
+        \quad \textbullet\ \href{\VAR{ url }}{\VAR{ label }}%
+    \BLOCK{ endfor }
+\end{center}
+
+\vspace{-4pt}
+
+
+\BLOCK{ if education }%
+%% ── Education ────────────────────────────────────────────────
+\section{Education}
+\BLOCK{ for edu in education }%
+\textbf{\VAR{ edu.institution }} \hfill \VAR{ edu.start_date } -- \VAR{ edu.end_date } \\
+\textit{\VAR{ edu.degree }}\BLOCK{ if edu.gpa } \textit{(CGPA: \VAR{ edu.gpa })}\BLOCK{ endif }%
+\BLOCK{ if edu.coursework }%
+ \hfill \VAR{ edu.coursework | join(', ') }%
+\BLOCK{ endif }%
+\BLOCK{ if not loop.last }
+
+\vspace{4pt}
+\BLOCK{ endif }%
+\BLOCK{ endfor }%
+\BLOCK{ endif }
+
+
+\BLOCK{ if experience }%
+%% ── Experience ───────────────────────────────────────────────
+\section{Experience}
+\BLOCK{ for exp in experience }%
+\textbf{\VAR{ exp.company }} \hfill \VAR{ exp.start_date } -- \VAR{ exp.end_date } \\
+\textit{\VAR{ exp.role }}\BLOCK{ if exp.technologies } \ | \ \textit{\VAR{ exp.technologies | join(', ') }}\BLOCK{ endif }%
+\BLOCK{ if exp.work_mode }%
+ \hfill \VAR{ exp.work_mode }%
+\BLOCK{ endif }%
+\BLOCK{ if exp.bullets }
+\begin{\VAR{ exp.bullets_type }}\BLOCK{ if exp.bullets_type == 'itemize' }[label=\textasteriskcentered, leftmargin=1.5em]\BLOCK{ else }[leftmargin=1.5em]\BLOCK{ endif }
+\BLOCK{ for bullet in exp.bullets }
+    \item \VAR{ bullet }
+\BLOCK{ endfor }
+\end{\VAR{ exp.bullets_type }}
+\BLOCK{ endif }%
+\BLOCK{ if not loop.last }
+\vspace{4pt}
+\BLOCK{ endif }%
+\BLOCK{ endfor }%
+\BLOCK{ endif }
+
+
+\BLOCK{ if projects }%
+%% ── Projects ─────────────────────────────────────────────────
+\section{Projects}
+\BLOCK{ for proj in projects }%
+\textbf{\VAR{ proj.name }}\BLOCK{ if proj.link } \ | \ \href{\VAR{ proj.link }}{\textbf{\BLOCK{ if 'github' in proj.link.lower() }(GitHub)\BLOCK{ else }(Link)\BLOCK{ endif }}}\BLOCK{ endif }\BLOCK{ if proj.technologies } \ | \ \textit{\VAR{ proj.technologies | join(', ') }}\BLOCK{ endif }%
+\BLOCK{ if proj.description and proj.description.strip() }%
+\\ \VAR{ proj.description }%
+\BLOCK{ endif }%
+\BLOCK{ if proj.bullets }
+\begin{\VAR{ proj.bullets_type }}\BLOCK{ if proj.bullets_type == 'itemize' }[label=\textasteriskcentered, leftmargin=1.5em]\BLOCK{ else }[leftmargin=1.5em]\BLOCK{ endif }
+\BLOCK{ for bullet in proj.bullets }
+    \item \VAR{ bullet }
+\BLOCK{ endfor }
+\end{\VAR{ proj.bullets_type }}
+\BLOCK{ endif }%
+\BLOCK{ if not loop.last }
+\vspace{4pt}
+\BLOCK{ endif }%
+\BLOCK{ endfor }%
+\BLOCK{ endif }
+
+
+\BLOCK{ if skills and skills.categories }%
+%% ── Skills ───────────────────────────────────────────────────
+\section{Technical Skills}
+\BLOCK{ for category, skill_list in skills.categories.items() }%
+\textbf{\VAR{ category }:} \VAR{ skill_list | join(', ') }\BLOCK{ if not loop.last } \\ \BLOCK{ endif }%
+\BLOCK{ endfor }%
+\BLOCK{ endif }
+
+
+\BLOCK{ if certifications }%
+%% ── Certifications ───────────────────────────────────────────
+\section{Certifications}
+\BLOCK{ for cert in certifications }%
+\textbf{\VAR{ cert.name }} — \VAR{ cert.issuer } \hfill \VAR{ cert.date }%
+\BLOCK{ if cert.description }%
+\\ \small{\VAR{ cert.description }}%
+\BLOCK{ endif }%
+\BLOCK{ if not loop.last }
+
+\BLOCK{ endif }%
+\BLOCK{ endfor }%
+\BLOCK{ endif }
+
+
+\BLOCK{ if achievements }%
+%% ── Achievements ─────────────────────────────────────────────
+\section{Achievements}
+\VAR{ achievements }
+\BLOCK{ endif }
+
+\end{document}
