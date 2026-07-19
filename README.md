@@ -30,7 +30,7 @@ When applying for different jobs, submitting a generic resume limits your respon
 ## 🛠️ Tech Stack
 
 - **Backend**: [Flask](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/app.py) (routes & HTTP APIs), [Pydantic](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/requirements.txt) (strict model validation), `python-dotenv` (configuration loader)
-- **AI Integrations**: [google-genai SDK](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) (Gemini Developer API client using the `gemini-2.5-flash` model)
+- **AI Integrations**: [google-genai SDK](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) (Gemini Developer API client using the `gemini-3.5-flash` model)
 - **Parsers**: [pypdf](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) & [python-docx](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) (text extraction from PDFs and Word docs)
 - **Web Scraping**: [BeautifulSoup4](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py) & `requests` (job description page cleaning)
 - **LaTeX Renderer**: [Jinja2](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) (standalone template engine env) & Tectonic CLI compiler

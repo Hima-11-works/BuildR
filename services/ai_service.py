@@ -111,9 +111,9 @@ def _get_client() -> genai.Client:
     return _client
 
 # ── Model selection ──────────────────────────────────────────
-# gemini-2.5-flash supports structured output and gives better
-# rephrasing quality than 2.0 Flash while staying fast enough for UI use.
-_MODEL = "gemini-2.5-flash"
+# gemini-3.5-flash supports structured output and gives better
+# rephrasing quality while staying fast enough for UI use.
+_MODEL = "gemini-3.5-flash"
 
 
 def _plain(value: str | None) -> str:
