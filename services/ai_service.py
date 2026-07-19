@@ -419,6 +419,69 @@ def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> 
         sanitized_categories.append(skill_category)
     tailored.skills.categories = sanitized_categories
 
+    # ── 7. Achievements — restore HTML list formatting ────────
+    # The master resume stores achievements as HTML with <ul>/<li> tags
+    # from the rich-text editor.  Gemini's structured output schema
+    # treats achievements as a plain str, so the model often strips the
+    # HTML wrapping and returns bare text.  When that happens the LaTeX
+    # pipeline receives text without list markup, producing plain
+    # paragraphs instead of bullet points in the PDF.
+    #
+    # Strategy: if the *original* achievements contain HTML list tags
+    # (<ul> or <ol>) but the tailored version does not, re-wrap the
+    # tailored text items back into the same list type so the
+    # downstream html_to_latex converter can emit \begin{itemize}.
+    import re as _re
+    from bs4 import BeautifulSoup as _BS
+
+    original_ach = (profile.achievements or "").strip()
+    tailored_ach = (tailored.achievements or "").strip()
+
+    if original_ach and tailored_ach:
+        original_has_list = bool(_re.search(r"<[uo]l[\s>]", original_ach, _re.IGNORECASE))
+        tailored_has_list = bool(_re.search(r"<[uo]l[\s>]", tailored_ach, _re.IGNORECASE))
+
+        if original_has_list and not tailored_has_list:
+            # Determine the list type used in the original (<ul> or <ol>).
+            list_tag = "ul" if "<ul" in original_ach.lower() else "ol"
+
+            # Count how many items the original list contained.
+            original_soup = _BS(original_ach, "html.parser")
+            original_item_count = len(original_soup.find_all("li"))
+
+            # Extract individual text items from the tailored plain text.
+            # The AI may return newline-separated lines, or a single block;
+            # also handle residual <p>/<li> fragments if present.
+            soup = _BS(tailored_ach, "html.parser")
+            raw_text = soup.get_text("\n")
+            lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+
+            # Strip common leading list markers (•, -, *, etc.) the AI
+            # may have inserted as plain-text bullets.
+            cleaned = []
+            for ln in lines:
+                ln = _re.sub(r"^[•·▪▸►\-\*–—]\s+", "", ln)
+                ln = _re.sub(r"^\d+[.)]\s+", "", ln)
+                if ln:
+                    cleaned.append(ln)
+
+            # If the AI collapsed multiple achievements into a single line
+            # but the original had multiple items, the content is too
+            # mangled to recover reliably — fall back to the original.
+            if len(cleaned) <= 1 and original_item_count > 1:
+                tailored.achievements = original_ach
+                warnings.append(
+                    "AI collapsed achievements into a single string — "
+                    "restored original achievements verbatim."
+                )
+            elif cleaned:
+                li_items = "".join(f"<li>{item}</li>" for item in cleaned)
+                tailored.achievements = f"<{list_tag}>{li_items}</{list_tag}>"
+                warnings.append(
+                    "Restored HTML list formatting on achievements "
+                    f"(AI returned plain text; re-wrapped in <{list_tag}>)."
+                )
+
     # Log all corrections at DEBUG level for server-side visibility.
     for w in warnings:
         _log.debug("[sanitize_tailored_output] %s", w)
@@ -474,7 +537,9 @@ STRICT RULES
 9. For certifications, pass selected entries through unchanged.
 
 10. For achievements, pass through or trim the original text. Do not add new
-    achievements.
+    achievements. IMPORTANT: The achievements field may contain HTML list markup
+    (e.g. <ul><li>…</li></ul>). You MUST preserve the HTML tags exactly as given.
+    Do NOT strip the HTML or convert to plain text.
 
 QUALITY GUIDELINES
 

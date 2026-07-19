@@ -132,7 +132,7 @@ class TailoredProfile(BaseModel):
     )
     achievements: str = Field(
         default="",
-        description="Achievements text from the profile, optionally trimmed. Do not invent achievements.",
+        description="Achievements text from the profile, optionally trimmed. Do not invent achievements. MUST preserve any HTML tags (e.g. <ul><li>…</li></ul>) exactly as given; do NOT strip to plain text.",
     )
 
     def to_profile(self) -> Profile:
