@@ -20,7 +20,7 @@ class TailoringStats(BaseModel):
     """Factual optimization statistics."""
     keywords_added: int = Field(description="Count of key skills/keywords from the job description added to the resume.")
     bullets_improved: int = Field(description="Number of work experience or project bullet points rewritten.")
-    sections_reordered: int = Field(description="Number of sections re-ordered for relevance.")
+    sections_reordered: int = Field(description="Number of sections improved or optimized by the AI (original section order must be preserved).")
     keywords_not_included: int = Field(description="Count of keywords from the job description that could not be added because they are not in the master resume.")
 
 class TailoringResult(BaseModel):

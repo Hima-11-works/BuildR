@@ -518,7 +518,7 @@ STRICT RULES
 3. Select the most relevant experiences, projects, skills, and certifications
    for this specific job. You do not need to include everything.
 
-4. Order sections by relevance. Put the most relevant items first.
+4. Do NOT reorder top-level sections. Keep the exact section structure identical to the master profile. Within each section, you may order individual entries (like work experiences or projects) by relevance, putting the most relevant items first.
 
 5. You may omit items that are clearly irrelevant to the job.
 
@@ -784,10 +784,9 @@ C. Keywords that the job description asks for but that are NOT supported by
 D. You may REWRITE wording of bullet points (action verbs, phrasing, emphasis)
    as long as the underlying facts, metrics, technologies, and entities stay
    truthful to the master profile.
-E. You may REORDER sections, projects, and experiences so the most relevant
-   ones appear first. Ordering changes are allowed.
+E. Do NOT reorder top-level sections. The section order (Personal Info, Education, Experience, Projects, Skills, Certifications, Achievements) must remain exactly identical to the master profile. You may reorder individual entries within a section (such as experience entries, project entries, or skills) so the most relevant ones appear first.
 F. You may EMPHASIZE existing experience by re-surfacing it more prominently
-   (e.g. moving a relevant project up) but you may NOT fabricate new
+   (e.g. moving a relevant project up within the projects list) but you may NOT fabricate new
    experiences to fill a gap.
 
 STYLE GUIDELINES:
@@ -798,7 +797,7 @@ STYLE GUIDELINES:
 REQUIRED OUTPUT SCHEMA (TailoringResult):
 - profile: The tailored profile content. Must contain ONLY entries (skills,
   experiences, projects, certifications, links) that already exist in the
-  master profile, with rewritten bullets and reordered sections.
+  master profile, with rewritten bullets and original top-level section ordering.
 - suggestions: Expanded list of recommendations / modifications made. Provide a
   title and detailed transparent explanation explaining WHY you made each
   suggestion based on the job description.
@@ -812,7 +811,7 @@ REQUIRED OUTPUT SCHEMA (TailoringResult):
       (i.e. keywords from the JD that already existed in the master profile
       and were emphasized or surfaced in the tailored profile).
     - bullets_improved: count of bullet points modified.
-    - sections_reordered: count of sections re-ordered or re-grouped.
+    - sections_reordered: count of sections whose content was improved or tailored.
     - keywords_not_included: count of job description keywords that were
       omitted because they are missing from the master resume.
 - insights: Resume analysis insights (key strengths, opportunities for
@@ -887,8 +886,7 @@ C. If the user's instruction implies adding something that does not exist in
    the master profile, DO NOT add it. Instead, list it in
    `keywords_not_included_list` and explain in the suggestions that the
    requested item is not supported by the master resume.
-D. You may REWRITE wording of bullets (action verbs, phrasing, emphasis) and
-   REORDER sections to satisfy the user's request, but you may NOT fabricate.
+D. Do NOT reorder top-level sections. The section order (Personal Info, Education, Experience, Projects, Skills, Certifications, Achievements) must remain exactly identical to the master profile. You may REWRITE wording of bullets (action verbs, phrasing, emphasis) and reorder individual items within a section (like experience or project entries) to satisfy the user's request, but you may NOT fabricate.
 E. Be transparent: in `suggestions`, outline what changes were made in
    response to this instruction and WHY, including any items you refused to
    add because they are not supported by the master profile.
@@ -896,7 +894,7 @@ E. Be transparent: in `suggestions`, outline what changes were made in
 REQUIRED OUTPUT SCHEMA (TailoringResult):
 - profile: The updated tailored profile. All entries must still trace back
   to the master profile verbatim (skill strings, technologies, links,
-  company names, dates).
+  company names, dates), and top-level sections must remain in their original order.
 - suggestions: Specific details of what changed in this turn and WHY,
   including any refused additions.
 - keywords_not_included_list: Skills/keywords the user asked for that the

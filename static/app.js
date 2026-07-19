@@ -2542,7 +2542,47 @@ function renderResumeEditor(profile) {
         `;
     };
 
-    // 2. Experience Section
+    // 2. Education Section
+    html += `
+        <div class="editor-section" id="editor-section-education">
+            ${renderSectionHeader("Education", "btn-editor-add-edu", "Add Education")}
+            <div id="editor-education-list">
+    `;
+    (profile.education || []).forEach((edu, idx) => {
+        html += `
+            <div class="editor-edu-entry editor-entry" data-index="${idx}">
+                <div class="editor-entry-row flex justify-between">
+                    <div class="editor-entry-header-left">
+                        <span class="edu-institution font-bold" contenteditable="true" placeholder="Institution">${escapeHtml(edu.institution)}</span>
+                        <span class="editor-separator"> — </span>
+                        <span class="edu-degree font-semibold" contenteditable="true" placeholder="Degree">${escapeHtml(edu.degree)}</span>
+                    </div>
+                    <div class="editor-entry-header-right flex items-center gap-sm">
+                        <span class="edu-start-date" contenteditable="true" placeholder="Start Date">${escapeHtml(edu.start_date)}</span>
+                        <span class="editor-separator"> — </span>
+                        <span class="edu-end-date" contenteditable="true" placeholder="End Date">${escapeHtml(edu.end_date)}</span>
+                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
+                    </div>
+                </div>
+                <div class="editor-entry-details flex gap-md">
+                    <div>
+                        <span class="footer-label">GPA: </span>
+                        <span class="edu-gpa" contenteditable="true" placeholder="Omit or e.g. 3.9">${edu.gpa !== null && edu.gpa !== undefined ? edu.gpa : ""}</span>
+                    </div>
+                    <div class="flex-grow">
+                        <span class="footer-label">Coursework: </span>
+                        <span class="edu-coursework" contenteditable="true" placeholder="e.g. Algorithms, Databases">${escapeHtml((edu.coursework || []).join(", "))}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += `
+            </div>
+        </div>
+    `;
+
+    // 3. Experience Section
     html += `
         <div class="editor-section" id="editor-section-experience">
             ${renderSectionHeader("Work Experience", "btn-editor-add-exp", "Add Job")}
@@ -2593,7 +2633,7 @@ function renderResumeEditor(profile) {
         </div>
     `;
 
-    // 3. Projects Section
+    // 4. Projects Section
     html += `
         <div class="editor-section" id="editor-section-projects">
             ${renderSectionHeader("Projects", "btn-editor-add-proj", "Add Project")}
@@ -2643,7 +2683,7 @@ function renderResumeEditor(profile) {
         </div>
     `;
 
-    // 4. Skills Section
+    // 5. Skills Section
     html += `
         <div class="editor-section" id="editor-section-skills">
             ${renderSectionHeader("Technical Skills", "btn-editor-add-skill-cat", "Add Category")}
@@ -2657,46 +2697,6 @@ function renderResumeEditor(profile) {
                 <span class="editor-separator">: </span>
                 <span class="skill-category-skills flex-grow" contenteditable="true" placeholder="Skills (comma separated)">${escapeHtml(skillsList.join(", "))}</span>
                 <button type="button" class="btn-delete-entry" title="Remove Category"><i data-lucide="trash-2"></i></button>
-            </div>
-        `;
-    });
-    html += `
-            </div>
-        </div>
-    `;
-
-    // 5. Education Section
-    html += `
-        <div class="editor-section" id="editor-section-education">
-            ${renderSectionHeader("Education", "btn-editor-add-edu", "Add Education")}
-            <div id="editor-education-list">
-    `;
-    (profile.education || []).forEach((edu, idx) => {
-        html += `
-            <div class="editor-edu-entry editor-entry" data-index="${idx}">
-                <div class="editor-entry-row flex justify-between">
-                    <div class="editor-entry-header-left">
-                        <span class="edu-institution font-bold" contenteditable="true" placeholder="Institution">${escapeHtml(edu.institution)}</span>
-                        <span class="editor-separator"> — </span>
-                        <span class="edu-degree font-semibold" contenteditable="true" placeholder="Degree">${escapeHtml(edu.degree)}</span>
-                    </div>
-                    <div class="editor-entry-header-right flex items-center gap-sm">
-                        <span class="edu-start-date" contenteditable="true" placeholder="Start Date">${escapeHtml(edu.start_date)}</span>
-                        <span class="editor-separator"> — </span>
-                        <span class="edu-end-date" contenteditable="true" placeholder="End Date">${escapeHtml(edu.end_date)}</span>
-                        <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
-                    </div>
-                </div>
-                <div class="editor-entry-details flex gap-md">
-                    <div>
-                        <span class="footer-label">GPA: </span>
-                        <span class="edu-gpa" contenteditable="true" placeholder="Omit or e.g. 3.9">${edu.gpa !== null && edu.gpa !== undefined ? edu.gpa : ""}</span>
-                    </div>
-                    <div class="flex-grow">
-                        <span class="footer-label">Coursework: </span>
-                        <span class="edu-coursework" contenteditable="true" placeholder="e.g. Algorithms, Databases">${escapeHtml((edu.coursework || []).join(", "))}</span>
-                    </div>
-                </div>
             </div>
         `;
     });
@@ -3146,7 +3146,7 @@ function collectEditorData() {
 
     const achText = document.getElementById("editor-achievements-text");
     if (achText) {
-        profile.achievements = achText.textContent.trim();
+        profile.achievements = achText.innerHTML.trim();
     }
 
     return profile;
