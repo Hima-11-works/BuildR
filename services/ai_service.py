@@ -96,6 +96,15 @@ from models.tailored_profile import TailoredProfile
 
 _client: genai.Client | None = None
 
+# ── Request timeout ──────────────────────────────────────────
+# Without an explicit timeout, a hung Gemini call blocks the Flask
+# request thread indefinitely — on the single-threaded dev server that
+# stalls the whole app. 90s comfortably covers normal tailoring calls
+# (which send a full profile + job description) while still failing
+# fast if the API is unreachable. Configurable via GEMINI_TIMEOUT_MS
+# for slower connections.
+_DEFAULT_TIMEOUT_MS = 90_000
+
 
 def _get_client() -> genai.Client:
     """
@@ -107,7 +116,11 @@ def _get_client() -> genai.Client:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
-        _client = genai.Client(api_key=api_key)
+        timeout_ms = int(os.getenv("GEMINI_TIMEOUT_MS", _DEFAULT_TIMEOUT_MS))
+        _client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=timeout_ms),
+        )
     return _client
 
 # ── Model selection ──────────────────────────────────────────

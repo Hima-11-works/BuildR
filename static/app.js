@@ -95,7 +95,7 @@ function createRichEditor(parentElement, initialHtml, placeholder, showList = fa
     const editor = new Editor({
         element: contentEl,
         extensions: [StarterKit],
-        content: initialHtml || "",
+        content: sanitizeRichHtml(initialHtml) || "",
     });
     
     // Set placeholder on content area if empty
@@ -247,6 +247,7 @@ const skillsList        = document.getElementById("skills-list");
 // Resume library
 const libraryList       = document.getElementById("resume-library-list");
 const libraryEmptyState = document.getElementById("library-empty-state");
+const libraryNoResults  = document.getElementById("library-no-results");
 
 
 // ── Icons Helper ────────────────────────────────────────────
@@ -267,7 +268,7 @@ let cachedProfile = null;
 // ── Simple SPA Router ───────────────────────────────────────
 function router() {
     const hash = window.location.hash || "#home";
-    const views = ["#view-home", "#view-builder", "#view-tailor", "#view-tailor-workspace"];
+    const views = ["#view-home", "#view-builder", "#view-history", "#view-tailor", "#view-tailor-workspace"];
     
     views.forEach(vId => {
         const el = document.getElementById(vId.substring(1));
@@ -297,6 +298,12 @@ function router() {
         initializeTailoringWorkspace();
     } else {
         document.body.classList.remove("workspace-active");
+    }
+
+    // Refresh the resume library whenever the History page is opened, so it
+    // reflects anything generated elsewhere since the last full page load.
+    if (hash === "#history") {
+        loadLibrary();
     }
 
     // Load setup data if tailoring page is opened
@@ -400,60 +407,11 @@ function router() {
     window.scrollTo({ top: 0, behavior: "instant" });
 }
 
-// ── Update Master Resume Card UI ─────────────────────────────
-function updateMasterResumeStatusCard(profile) {
-    const card = document.getElementById("master-resume-card");
-    if (!card) return;
-
-    const statusText = document.getElementById("status-text");
-    const statusIcon = document.getElementById("status-icon");
-    const dateContainer = document.getElementById("status-date-container");
-    const dateValue = document.getElementById("status-date-value");
-    const statusDesc = document.getElementById("status-desc");
-    const statusActionBtn = document.getElementById("status-action-btn");
-
-    if (profile.has_valid_resume) {
-        card.className = "status-card status-available";
-        statusText.textContent = "Master Resume Available";
-        statusText.style.color = "var(--success)";
-        
-        statusIcon.setAttribute("data-lucide", "check-circle");
-        statusIcon.setAttribute("class", "status-icon-available");
-        
-        dateContainer.style.display = "block";
-        if (profile.metadata && profile.metadata.updated_at) {
-            try {
-                const date = new Date(profile.metadata.updated_at);
-                dateValue.textContent = date.toLocaleString();
-            } catch (e) {
-                dateValue.textContent = "Available";
-            }
-        } else {
-            dateValue.textContent = "Available";
-        }
-        
-        statusDesc.textContent = "Your Master Resume is fully configured and ready to use. You can generate a PDF copy, view its contents, or tailor it to custom jobs using our AI tools.";
-        
-        statusActionBtn.textContent = "Edit Master Resume";
-        statusActionBtn.className = "btn-secondary";
-        statusActionBtn.href = "#builder";
-    } else {
-        card.className = "status-card status-missing";
-        statusText.textContent = "No Master Resume Found";
-        statusText.style.color = "var(--warning)";
-        
-        statusIcon.setAttribute("data-lucide", "alert-circle");
-        statusIcon.setAttribute("class", "status-icon-missing");
-        
-        dateContainer.style.display = "none";
-        
-        statusDesc.textContent = "Please create a Master Resume first. Your Master Resume serves as the raw source of truth for the AI to tailor resume variants.";
-        
-        statusActionBtn.textContent = "Create Master Resume";
-        statusActionBtn.className = "btn-primary";
-        statusActionBtn.href = "#builder";
-    }
-    refreshIcons();
+// ── Update the "Master Resume Available" tag on the home page ─
+function updateHomeMasterTag(profile) {
+    const homeMasterTag = document.getElementById("home-master-tag");
+    if (!homeMasterTag) return;
+    homeMasterTag.style.display = profile.has_valid_resume ? "inline-flex" : "none";
 }
 
 async function loadProfile() {
@@ -473,7 +431,7 @@ async function loadProfile() {
         hasValidMasterResume = !!profile.has_valid_resume;
         cachedProfile = profile;
 
-        updateMasterResumeStatusCard(profile);
+        updateHomeMasterTag(profile);
         populateForm(profile);
         refreshIcons();
     } catch (err) {
@@ -1351,6 +1309,13 @@ if (confirmConfirmBtn) {
 // delete).
 // ═══════════════════════════════════════════════════════════════
 
+// Cached full list from the last successful fetch, so search/filter can
+// re-render instantly without round-tripping to the server on every
+// keystroke or filter-button click.
+let _libraryResumes = [];
+let _libraryFilterType = "all";
+let _librarySearchQuery = "";
+
 async function loadLibrary() {
     try {
         const response = await fetch("/api/resumes");
@@ -1362,24 +1327,68 @@ async function loadLibrary() {
             return;
         }
 
-        // Clear current list
-        libraryList.innerHTML = "";
-
-        if (resumes.length === 0) {
-            libraryEmptyState.style.display = "block";
-            return;
-        }
-
-        libraryEmptyState.style.display = "none";
-
-        resumes.forEach(resume => {
-            libraryList.appendChild(renderLibraryItem(resume));
-        });
-
-        refreshIcons();
+        _libraryResumes = resumes;
+        renderLibraryList();
+        renderHomeHistoryPreview();
     } catch (err) {
         console.error("Failed to load resume library:", err);
     }
+}
+
+// ── Home page History preview (last 5 generations) ────────────
+// Reuses renderLibraryItem() so the preview cards on the home page get the
+// exact same download/rename/duplicate/delete actions as the full Resume
+// Library page — one code path, two mount points, always in sync because
+// both are driven from the same loadLibrary() fetch.
+function renderHomeHistoryPreview() {
+    const list = document.getElementById("home-history-list");
+    const emptyState = document.getElementById("home-history-empty");
+    if (!list || !emptyState) return;
+
+    list.innerHTML = "";
+
+    if (_libraryResumes.length === 0) {
+        emptyState.style.display = "block";
+        return;
+    }
+    emptyState.style.display = "none";
+
+    _libraryResumes.slice(0, 5).forEach(resume => {
+        list.appendChild(renderLibraryItem(resume));
+    });
+
+    refreshIcons();
+}
+
+function renderLibraryList() {
+    libraryList.innerHTML = "";
+
+    if (_libraryResumes.length === 0) {
+        libraryEmptyState.style.display = "block";
+        libraryNoResults.style.display = "none";
+        return;
+    }
+    libraryEmptyState.style.display = "none";
+
+    const query = _librarySearchQuery.trim().toLowerCase();
+    const filtered = _libraryResumes.filter(resume => {
+        const matchesType = _libraryFilterType === "all" || resume.type === _libraryFilterType;
+        const matchesQuery = !query || (resume.label || "").toLowerCase().includes(query);
+        return matchesType && matchesQuery;
+    });
+
+    if (filtered.length === 0) {
+        libraryNoResults.style.display = "block";
+        refreshIcons();
+        return;
+    }
+    libraryNoResults.style.display = "none";
+
+    filtered.forEach(resume => {
+        libraryList.appendChild(renderLibraryItem(resume));
+    });
+
+    refreshIcons();
 }
 
 function renderLibraryItem(resume) {
@@ -1423,6 +1432,12 @@ function renderLibraryItem(resume) {
                     <i data-lucide="file-code"></i>
                 </button>
             ` : ""}
+            <button type="button" class="btn-icon-action btn-rename" title="Rename">
+                <i data-lucide="pencil"></i>
+            </button>
+            <button type="button" class="btn-icon-action btn-duplicate" title="Duplicate">
+                <i data-lucide="copy"></i>
+            </button>
             <button type="button" class="btn-icon-action btn-delete" title="Delete resume">
                 <i data-lucide="trash-2"></i>
             </button>
@@ -1450,6 +1465,14 @@ function renderLibraryItem(resume) {
         });
     }
 
+    item.querySelector(".btn-rename").addEventListener("click", () => {
+        renameResumeInLibrary(resume);
+    });
+
+    item.querySelector(".btn-duplicate").addEventListener("click", () => {
+        duplicateResumeInLibrary(resume);
+    });
+
     const deleteBtn = item.querySelector(".btn-delete");
     deleteBtn.addEventListener("click", () => {
         deleteResumeFromLibrary(resume.id, item);
@@ -1458,9 +1481,52 @@ function renderLibraryItem(resume) {
     return item;
 }
 
+async function renameResumeInLibrary(resume) {
+    const newLabel = await showRenameModal({
+        title: "Rename Resume",
+        initialValue: resume.label,
+    });
+    if (!newLabel || newLabel === resume.label) return;
+
+    try {
+        const response = await fetch(`/api/resumes/${encodeURIComponent(resume.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label: newLabel }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to rename resume.");
+
+        showToast("Resume renamed.", "success");
+        await loadLibrary();
+    } catch (err) {
+        showToast(err.message, "error");
+    }
+}
+
+async function duplicateResumeInLibrary(resume) {
+    try {
+        const response = await fetch(`/api/resumes/${encodeURIComponent(resume.id)}/duplicate`, {
+            method: "POST",
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to duplicate resume.");
+
+        showToast("Resume duplicated.", "success");
+        await loadLibrary();
+    } catch (err) {
+        showToast(err.message, "error");
+    }
+}
+
 async function deleteResumeFromLibrary(resumeId, itemElement) {
     // ── Confirm before deleting ──────────────────────────────
-    if (!confirm("Delete this resume? This cannot be undone.")) {
+    const confirmed = await showConfirmModal({
+        title: "Delete Resume",
+        message: "Delete this resume? This cannot be undone.",
+        confirmText: "Delete",
+    });
+    if (!confirmed) {
         return;
     }
 
@@ -1674,6 +1740,156 @@ function escapeHtml(str) {
 }
 
 
+// ── Rich-text HTML sanitizer ──────────────────────────────────
+// Bullets, project/certification descriptions, and achievements are
+// stored as small HTML fragments (bold/italic/lists) produced by the
+// TipTap editor or the AI tailoring pipeline. Several places in this
+// file inject that stored HTML directly via innerHTML (both to seed
+// TipTap's `content:` option and, in the AI-tailoring workspace editor,
+// straight into a plain contenteditable element). If profile.json is
+// ever hand-edited, restored from an untrusted source, or a future
+// parsing edge case lands something unexpected in a bullet, this
+// prevents it from executing as script/event-handler markup.
+//
+// Parsing happens inside a detached <template> element: per spec its
+// .content is an inert DocumentFragment, so nothing (image loads,
+// onerror handlers, embedded scripts) executes just from parsing —
+// only from being inserted into the live document, which we never do
+// with the unsanitized tree.
+const RICH_TEXT_ALLOWED_TAGS = new Set([
+    "B", "STRONG", "I", "EM", "U", "S", "STRIKE",
+    "UL", "OL", "LI", "BR", "P", "DIV", "SPAN", "A",
+]);
+const RICH_TEXT_DROP_ENTIRELY = new Set([
+    "SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "SVG", "FORM",
+]);
+const RICH_TEXT_ALLOWED_ATTRS = { A: ["href"] };
+
+function _sanitizeRichNode(root) {
+    Array.from(root.childNodes).forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            // Sanitize children first so an unwrapped disallowed wrapper
+            // never re-exposes an un-sanitized descendant.
+            _sanitizeRichNode(node);
+
+            const tag = node.tagName;
+            if (RICH_TEXT_DROP_ENTIRELY.has(tag)) {
+                root.removeChild(node);
+                return;
+            }
+            if (!RICH_TEXT_ALLOWED_TAGS.has(tag)) {
+                // Unwrap: keep the (already-sanitized) text/children, drop the tag itself.
+                while (node.firstChild) root.insertBefore(node.firstChild, node);
+                root.removeChild(node);
+                return;
+            }
+
+            const allowedAttrs = RICH_TEXT_ALLOWED_ATTRS[tag] || [];
+            Array.from(node.attributes).forEach((attr) => {
+                if (!allowedAttrs.includes(attr.name.toLowerCase())) {
+                    node.removeAttribute(attr.name);
+                }
+            });
+            if (tag === "A") {
+                const href = (node.getAttribute("href") || "").trim();
+                if (!/^(https?:|mailto:)/i.test(href)) {
+                    node.removeAttribute("href");
+                }
+            }
+        } else if (node.nodeType !== Node.TEXT_NODE) {
+            // Comments, processing instructions, CDATA, etc. — no legitimate use here.
+            root.removeChild(node);
+        }
+    });
+}
+
+function sanitizeRichHtml(html) {
+    if (!html) return "";
+    const template = document.createElement("template");
+    template.innerHTML = String(html);
+    _sanitizeRichNode(template.content);
+    return template.innerHTML;
+}
+
+
+// ── Generic confirm / rename modals ───────────────────────────
+// Replaces native confirm()/prompt() dialogs, which look out of place next
+// to the app's own styled modal (#confirmation-modal, used for the import
+// flow). Both return a Promise so call sites can `await` them like the
+// browser built-ins they replace.
+
+function showConfirmModal({ title = "Are you sure?", message = "", confirmText = "Confirm" } = {}) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("confirm-generic-modal");
+        const titleEl = document.getElementById("confirm-generic-title");
+        const msgEl = document.getElementById("confirm-generic-message");
+        const confirmBtn = document.getElementById("confirm-generic-confirm");
+        const cancelBtn = document.getElementById("confirm-generic-cancel");
+        const closeBtn = document.getElementById("confirm-generic-close");
+
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+        confirmBtn.textContent = confirmText;
+
+        const finish = (result) => {
+            modal.classList.remove("active");
+            confirmBtn.removeEventListener("click", onConfirm);
+            cancelBtn.removeEventListener("click", onCancel);
+            closeBtn.removeEventListener("click", onCancel);
+            resolve(result);
+        };
+        const onConfirm = () => finish(true);
+        const onCancel = () => finish(false);
+
+        confirmBtn.addEventListener("click", onConfirm);
+        cancelBtn.addEventListener("click", onCancel);
+        closeBtn.addEventListener("click", onCancel);
+
+        modal.classList.add("active");
+    });
+}
+
+function showRenameModal({ title = "Rename Resume", initialValue = "" } = {}) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("rename-resume-modal");
+        const titleEl = document.getElementById("rename-resume-title");
+        const input = document.getElementById("rename-resume-input");
+        const confirmBtn = document.getElementById("rename-resume-confirm");
+        const cancelBtn = document.getElementById("rename-resume-cancel");
+        const closeBtn = document.getElementById("rename-resume-close");
+
+        titleEl.textContent = title;
+        input.value = initialValue;
+
+        const finish = (result) => {
+            modal.classList.remove("active");
+            confirmBtn.removeEventListener("click", onConfirm);
+            cancelBtn.removeEventListener("click", onCancel);
+            closeBtn.removeEventListener("click", onCancel);
+            input.removeEventListener("keydown", onKeydown);
+            resolve(result);
+        };
+        const onConfirm = () => {
+            const value = input.value.trim();
+            finish(value || null);
+        };
+        const onCancel = () => finish(null);
+        const onKeydown = (e) => {
+            if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
+            else if (e.key === "Escape") { onCancel(); }
+        };
+
+        confirmBtn.addEventListener("click", onConfirm);
+        cancelBtn.addEventListener("click", onCancel);
+        closeBtn.addEventListener("click", onCancel);
+        input.addEventListener("keydown", onKeydown);
+
+        modal.classList.add("active");
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+    });
+}
+
+
 // ═══════════════════════════════════════════════════════════════
 // 8. EVENT WIRING — connect buttons to functions
 // ═══════════════════════════════════════════════════════════════
@@ -1722,6 +1938,23 @@ document.addEventListener("DOMContentLoaded", () => {
     loadLibrary();
     document.getElementById("refresh-library-btn").addEventListener("click", loadLibrary);
 
+    const librarySearchInput = document.getElementById("library-search-input");
+    if (librarySearchInput) {
+        librarySearchInput.addEventListener("input", () => {
+            _librarySearchQuery = librarySearchInput.value;
+            renderLibraryList();
+        });
+    }
+
+    document.querySelectorAll(".library-filter-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            document.querySelectorAll(".library-filter-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            _libraryFilterType = btn.dataset.filter;
+            renderLibraryList();
+        });
+    });
+
     // ── "Add" buttons ────────────────────────────────────────
     document.getElementById("add-link-btn").addEventListener("click", () => addLinkRow());
     document.getElementById("add-education-btn").addEventListener("click", () => addEducationItem());
@@ -1748,10 +1981,19 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("hashchange", router);
 
     // ── Keyboard shortcut: Ctrl+S to save ────────────────────
+    // Context-aware: in the AI tailoring workspace, Ctrl+S force-saves the
+    // active draft (the same thing debouncedSaveDraft does on a delay);
+    // everywhere else it saves the master profile form.
     document.addEventListener("keydown", (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "s") {
             e.preventDefault();
-            saveProfile();
+            if (document.body.classList.contains("workspace-active") && workspaceSessionId) {
+                forceSaveDraft()
+                    .then(() => showToast("Draft saved.", "success"))
+                    .catch(err => showToast(err.message, "error"));
+            } else {
+                saveProfile();
+            }
         }
     });
 
@@ -2106,10 +2348,24 @@ async function analyzeJobDescriptionText(jdText) {
 
 
 // ── AI Resume Workspace View Controllers ──────────────────────
-let workspaceSessionId = null;
+// workspaceSessionId is mirrored into sessionStorage (see setWorkspaceSessionId
+// / clearWorkspaceSessionId below) so an in-progress tailoring draft survives
+// a page refresh — the draft itself already lives on disk under
+// storage/sessions/<id>/, this just lets the UI find its way back to it.
+const WORKSPACE_SESSION_STORAGE_KEY = "workspaceSessionId";
+let workspaceSessionId = sessionStorage.getItem(WORKSPACE_SESSION_STORAGE_KEY) || null;
 let currentProfileJson = null;
 let autoSaveTimeout = null;
 let isEventsWired = false;
+
+function setWorkspaceSessionId(sessionId) {
+    workspaceSessionId = sessionId;
+    if (sessionId) {
+        sessionStorage.setItem(WORKSPACE_SESSION_STORAGE_KEY, sessionId);
+    } else {
+        sessionStorage.removeItem(WORKSPACE_SESSION_STORAGE_KEY);
+    }
+}
 
 function setStepState(stepId, state) {
     const stepEl = document.getElementById(stepId);
@@ -2220,23 +2476,38 @@ async function initializeTailoringWorkspace() {
         }
         
         // Initialize state variables
-        workspaceSessionId = wsData.session_id;
-        
+        setWorkspaceSessionId(wsData.session_id);
+
         // Fetch the full draft (with profile) to render
         await fetchAndRenderWorkspace(workspaceSessionId);
-        
+
         // Hide Stage 1 Loading and reveal Stage 2
         document.getElementById("workspace-loading").style.display = "none";
         document.getElementById("workspace-content").style.display = "flex";
         document.getElementById("workspace-bottom-bar").style.display = "flex";
-        
+
         // Initialize chat history with welcome message
         initChatHistory();
-        
+
         showToast("Tailored resume generated!", "success");
     } else if (workspaceSessionId) {
-        // If hash router matches and workspaceSessionId is set, just refresh
-        await fetchAndRenderWorkspace(workspaceSessionId);
+        // Either a same-tab hash change back into the workspace, or a fresh
+        // page load that recovered workspaceSessionId from sessionStorage
+        // (e.g. the user refreshed mid-session) — reload the draft in place.
+        document.getElementById("workspace-loading").style.display = "none";
+        document.getElementById("workspace-content").style.display = "flex";
+        document.getElementById("workspace-bottom-bar").style.display = "flex";
+
+        const ok = await fetchAndRenderWorkspace(workspaceSessionId);
+        if (ok) {
+            initChatHistory();
+        } else {
+            // The session may have been cleaned up server-side (see
+            // services/session_service.py's expiry sweep) — fall back to setup
+            // instead of leaving the user staring at an empty workspace.
+            setWorkspaceSessionId(null);
+            window.location.hash = "#tailor";
+        }
     }
 }
 
@@ -2245,11 +2516,14 @@ async function fetchAndRenderWorkspace(sessionId) {
         const response = await fetch(`/api/tailor/draft/${sessionId}`);
         if (!response.ok) throw new Error("Failed to fetch draft data.");
         const data = await response.json();
-        
+
         currentProfileJson = data.profile;
         renderWorkspaceData(data);
+        setSaveStatus("saved"); // reset indicator to a clean baseline on (re)load
+        return true;
     } catch (err) {
         showToast(err.message, "error");
+        return false;
     }
 }
 
@@ -2612,7 +2886,7 @@ function renderResumeEditor(profile) {
             html += `
                 <li class="editor-bullet-item">
                     <span class="bullet-dot">•</span>
-                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${bullet}</div>
+                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${sanitizeRichHtml(bullet)}</div>
                     <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
                 </li>
             `;
@@ -2653,7 +2927,7 @@ function renderResumeEditor(profile) {
                     </div>
                 </div>
                 <div class="proj-description-container">
-                    <div class="proj-description text-muted" contenteditable="true" placeholder="Project One-liner Description...">${proj.description || ""}</div>
+                    <div class="proj-description text-muted" contenteditable="true" placeholder="Project One-liner Description...">${sanitizeRichHtml(proj.description)}</div>
                 </div>
                 <div class="editor-bullets-container">
                     <ul class="editor-bullets-list">
@@ -2662,7 +2936,7 @@ function renderResumeEditor(profile) {
             html += `
                 <li class="editor-bullet-item">
                     <span class="bullet-dot">•</span>
-                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${bullet}</div>
+                    <div class="editor-bullet-content" contenteditable="true" placeholder="Add details...">${sanitizeRichHtml(bullet)}</div>
                     <button type="button" class="btn-delete-bullet" title="Remove Bullet">×</button>
                 </li>
             `;
@@ -2725,7 +2999,7 @@ function renderResumeEditor(profile) {
                         <button type="button" class="btn-delete-entry" title="Remove Entry"><i data-lucide="trash-2"></i></button>
                     </div>
                 </div>
-                <div class="cert-description text-muted" contenteditable="true" placeholder="Optional description...">${cert.description ? cert.description : ""}</div>
+                <div class="cert-description text-muted" contenteditable="true" placeholder="Optional description...">${sanitizeRichHtml(cert.description)}</div>
             </div>
         `;
     });
@@ -2738,7 +3012,7 @@ function renderResumeEditor(profile) {
     html += `
         <div class="editor-section" id="editor-section-achievements">
             ${renderSectionHeader("Achievements & Awards")}
-            <div id="editor-achievements-text" class="editor-achievements-content" contenteditable="true" placeholder="Type your achievements here...">${profile.achievements || ""}</div>
+            <div id="editor-achievements-text" class="editor-achievements-content" contenteditable="true" placeholder="Type your achievements here...">${sanitizeRichHtml(profile.achievements)}</div>
         </div>
     `;
 
@@ -3152,8 +3426,37 @@ function collectEditorData() {
     return profile;
 }
 
+// ── Autosave status indicator ─────────────────────────────────
+// The workspace bottom bar used to show a static "All changes are saved
+// automatically" message regardless of what actually happened — a failed
+// save (e.g. a dropped connection) was only ever logged to the console,
+// never surfaced to the user. setSaveStatus() drives the real indicator.
+function setSaveStatus(state) {
+    const container = document.getElementById("ws-save-status");
+    const text = document.getElementById("ws-save-status-text");
+    if (!container || !text) return;
+    const icon = container.querySelector(".save-status-icon");
+
+    container.classList.remove("is-saving", "is-error");
+
+    if (state === "saving") {
+        container.classList.add("is-saving");
+        if (icon) icon.setAttribute("data-lucide", "loader");
+        text.textContent = "Saving…";
+    } else if (state === "error") {
+        container.classList.add("is-error");
+        if (icon) icon.setAttribute("data-lucide", "alert-circle");
+        text.textContent = "Couldn't save — changes may be lost";
+    } else {
+        if (icon) icon.setAttribute("data-lucide", "check-circle");
+        text.textContent = "All changes are saved automatically";
+    }
+    refreshIcons();
+}
+
 function debouncedSaveDraft() {
     clearTimeout(autoSaveTimeout);
+    setSaveStatus("saving");
     autoSaveTimeout = setTimeout(() => {
         saveDraftToBackend();
     }, 1500);
@@ -3169,29 +3472,38 @@ async function saveDraftToBackend() {
             body: JSON.stringify({ profile })
         });
         if (response.ok) {
-            console.log("Working draft auto-saved.");
+            setSaveStatus("saved");
         } else {
             console.warn("Working draft auto-save failed.");
+            setSaveStatus("error");
         }
     } catch (err) {
         console.error("Auto-save network error:", err.message);
+        setSaveStatus("error");
     }
 }
 
 async function forceSaveDraft() {
     clearTimeout(autoSaveTimeout);
     if (!workspaceSessionId) return;
-    
+
+    setSaveStatus("saving");
     const profile = collectEditorData();
-    const response = await fetch(`/api/tailor/draft/${workspaceSessionId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile })
-    });
-    
-    if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Failed to save draft changes.");
+    try {
+        const response = await fetch(`/api/tailor/draft/${workspaceSessionId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ profile })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || "Failed to save draft changes.");
+        }
+        setSaveStatus("saved");
+    } catch (err) {
+        setSaveStatus("error");
+        throw err;
     }
 }
 
@@ -3247,8 +3559,14 @@ function setupWorkspaceEventsOnce() {
     // Start Over
     const btnStartOver = document.getElementById("ws-btn-startover");
     if (btnStartOver) {
-        btnStartOver.addEventListener("click", (e) => {
-            if (confirm("Are you sure you want to start over? Unsaved draft changes will be deleted.")) {
+        btnStartOver.addEventListener("click", async (e) => {
+            const confirmed = await showConfirmModal({
+                title: "Start Over?",
+                message: "Are you sure you want to start over? Unsaved draft changes will be deleted.",
+                confirmText: "Start Over",
+            });
+            if (confirmed) {
+                setWorkspaceSessionId(null);
                 window.location.hash = "#tailor";
             }
         });

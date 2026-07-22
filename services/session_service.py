@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 import shutil
 from pathlib import Path
@@ -12,13 +13,71 @@ from models.profile import Profile
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SESSIONS_DIR = _PROJECT_ROOT / "storage" / "sessions"
 
+# Tailoring sessions are short-lived scratch space for the AI workspace —
+# nothing here is a permanent record (finished resumes get copied into the
+# Resume Library by save_resume()). Anything untouched this long is an
+# abandoned session and safe to delete. See cleanup_expired_sessions().
+_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60  # 7 days
+
+
 def get_session_dir(session_id: str) -> Path:
-    """Resolve session directory safely, preventing path traversal."""
-    # Path safety sanitization
+    """
+    Resolve a session ID to its directory, preventing path traversal.
+
+    Does NOT create the directory. Read paths (load_draft, load_job_context,
+    etc.) rely on this: looking up a bogus or expired session ID should
+    raise FileNotFoundError, not silently create an empty orphan directory
+    under storage/sessions/. Write paths that need the directory to exist
+    (create_session, update_draft, save_snapshot, restore_snapshot) create
+    it explicitly at their own call sites.
+
+    Raises
+    ------
+    ValueError
+        If the ID sanitizes to nothing (e.g. "", ".", "///") — without
+        this guard it would collapse to SESSIONS_DIR itself, and any
+        future write/delete keyed on that "session id" would silently
+        operate on the shared sessions directory instead of a single
+        session's folder.
+    """
+    # Path safety sanitization: only alnum, "-", "_" survive, so this can
+    # never traverse outside SESSIONS_DIR regardless of what's stripped.
     clean_id = "".join(c for c in session_id if c.isalnum() or c in ("-", "_"))
-    session_dir = SESSIONS_DIR / clean_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    return session_dir
+    if not clean_id:
+        raise ValueError("Invalid session ID.")
+    return SESSIONS_DIR / clean_id
+
+
+def cleanup_expired_sessions(max_age_seconds: int = _SESSION_MAX_AGE_SECONDS) -> int:
+    """
+    Delete session directories that haven't been touched in over
+    max_age_seconds. Intended to be run once at app startup so
+    storage/sessions/ doesn't grow without bound across restarts.
+
+    "Touched" is the most recent mtime among any file anywhere in the
+    session tree (not just the top-level folder), since ongoing edits
+    only update files inside draft/ or snapshots/, not the parent dir.
+
+    Returns the number of sessions removed.
+    """
+    if not SESSIONS_DIR.exists():
+        return 0
+
+    cutoff = time.time() - max_age_seconds
+    removed = 0
+    for entry in SESSIONS_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            files = [f for f in entry.rglob("*") if f.is_file()]
+            last_touched = max((f.stat().st_mtime for f in files), default=entry.stat().st_mtime)
+        except OSError:
+            continue
+        if last_touched < cutoff:
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+    return removed
+
 
 def create_session(master_profile: Profile, job_context: dict[str, Any]) -> str:
     """
@@ -26,7 +85,8 @@ def create_session(master_profile: Profile, job_context: dict[str, Any]) -> str:
     """
     session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     session_dir = get_session_dir(session_id)
-    
+    session_dir.mkdir(parents=True, exist_ok=True)
+
     # Save master profile reference
     with open(session_dir / "master_profile.json", "w", encoding="utf-8") as f:
         f.write(master_profile.model_dump_json(indent=2))
@@ -78,8 +138,8 @@ def update_draft(session_id: str, profile: Profile, metadata: dict[str, Any]) ->
     """
     session_dir = get_session_dir(session_id)
     draft_dir = session_dir / "draft"
-    draft_dir.mkdir(exist_ok=True)
-    
+    draft_dir.mkdir(parents=True, exist_ok=True)
+
     with open(draft_dir / "profile.json", "w", encoding="utf-8") as f:
         f.write(profile.model_dump_json(indent=2))
         
@@ -133,8 +193,8 @@ def restore_snapshot(session_id: str, snapshot_id: str) -> None:
     snapshot_dir = session_dir / "snapshots" / snapshot_id
     
     draft_dir = session_dir / "draft"
-    draft_dir.mkdir(exist_ok=True)
-    
+    draft_dir.mkdir(parents=True, exist_ok=True)
+
     shutil.copy2(snapshot_dir / "profile.json", draft_dir / "profile.json")
     shutil.copy2(snapshot_dir / "metadata.json", draft_dir / "metadata.json")
 

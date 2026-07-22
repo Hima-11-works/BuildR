@@ -1,0 +1,4 @@
+# Development-only dependencies (test suite). Install alongside the base
+# requirements with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest>=9.1,<10

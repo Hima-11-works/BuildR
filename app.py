@@ -28,7 +28,11 @@
 #                          saves to disk, returns success or errors
 # ──────────────────────────────────────────────────────────────
 
+import io
+import json
 import os
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path as _Path
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file
@@ -39,7 +43,8 @@ from services.storage_service import load_profile, save_profile
 from services.latex_service import render_latex
 from services.pdf_service import compile_pdf, PdfCompilationError
 from services.resume_library import (
-    save_resume, list_resumes, get_resume_path, delete_resume,
+    save_resume, list_resumes, get_resume_path, delete_resume, delete_resumes_by_type,
+    rename_resume, duplicate_resume,
 )
 
 # ── Step 1: Load environment variables from .env ─────────────
@@ -64,6 +69,22 @@ import services.session_service as session_service
 # parameters, but the defaults work perfectly for our layout.
 app = Flask(__name__)
 
+# ── Request size cap ──────────────────────────────────────────
+# Applies to every route (resume uploads, pasted job descriptions, profile
+# saves). Without it, request.files["file"].read() / request.get_json() in
+# the upload and parse routes below would buffer an arbitrarily large body
+# into memory. 20 MB comfortably covers real resume PDFs/DOCX files (a few
+# MB at most) with headroom, while still bounding worst-case memory use.
+# Flask returns a 413 automatically once this is exceeded.
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
+
+
+@app.errorhandler(413)
+def handle_request_too_large(e):
+    return jsonify({
+        "error": "The uploaded file or request body is too large (limit: 20 MB)."
+    }), 413
+
 
 # ── Step 3: Define routes ────────────────────────────────────
 @app.route("/")
@@ -78,6 +99,18 @@ def index():
       4. Return the rendered HTML string as an HTTP response.
     """
     return render_template("index.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """
+    Serve the favicon at the conventional root path. Browsers probe
+    GET /favicon.ico directly (independent of the <link rel="icon"> tags
+    in index.html's <head>) for things like tab icons before the page
+    has loaded or when bookmarking, so this needs to exist at the true
+    site root, not just under /static/.
+    """
+    return app.send_static_file("favicon.ico")
 
 
 # ── JSON API ─────────────────────────────────────────────────
@@ -249,8 +282,26 @@ def api_parse_resume():
 # while GET is for "retrieve existing data".
 # ──────────────────────────────────────────────────────────────
 
-# Where generated resumes live on disk
-_RESUMES_DIR = _Path(__file__).resolve().parent / "storage" / "resumes"
+
+@contextmanager
+def _isolated_compile(tex_string: str):
+    """
+    Compile tex_string inside a private temporary directory.
+
+    WHY THIS EXISTS
+    ----------------
+    compile_pdf() always writes fixed filenames (master_resume.tex /
+    master_resume.pdf) into whatever directory it's given. If two
+    requests both compiled straight into the shared resume library
+    directory at the same time, one request's in-flight .tex/.pdf could
+    be clobbered by the other before save_resume() gets a chance to copy
+    it out. Compiling into a private per-request temp directory
+    (auto-cleaned on exit) eliminates that race entirely — the shared
+    resume library directory is only ever touched by save_resume(),
+    which writes into a unique, freshly-made resume_id folder.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield compile_pdf(tex_string, _Path(tmpdir))
 
 
 @app.route("/api/resume/master", methods=["POST"])
@@ -286,19 +337,28 @@ def api_generate_master_resume():
         # ── Step 2: Render LaTeX ──────────────────────────────
         tex_string = render_latex(profile)
 
-        # ── Step 3: Compile to PDF ────────────────────────────
-        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
-
+        # ── Step 3: Compile to PDF (isolated per-request dir) ─
         # ── Step 4: Persist to the resume library ─────────────
         # save_resume() creates a timestamped subfolder with the
         # .tex, .pdf, and metadata.json — making this resume
         # browsable and downloadable later.
-        resume_id = save_resume(
-            tex_string=tex_string,
-            pdf_path=pdf_path,
-            resume_type="master",
-            label="Master",
-        )
+        #
+        # The master resume is a single canonical document, not a
+        # history — regenerating it (e.g. after every profile edit)
+        # replaces the previous "Master" library entry instead of
+        # piling up duplicates that only differ by timestamp. Old
+        # masters are only cleared out AFTER a successful compile, so
+        # a failed regeneration never destroys the last good one.
+        # Tailored resumes are untouched; each is a distinct, kept
+        # artifact for a specific job application.
+        with _isolated_compile(tex_string) as pdf_path:
+            delete_resumes_by_type("master")
+            resume_id = save_resume(
+                tex_string=tex_string,
+                pdf_path=pdf_path,
+                resume_type="master",
+                label="Master",
+            )
 
         # ── Step 5: Return JSON with the resume ID ────────────
         # The frontend uses this ID to download via
@@ -620,21 +680,21 @@ def api_tailor_save():
         
         # Render LaTeX from draft profile
         tex_string = render_latex(profile)
-        # Compile to PDF
-        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
-        
+
         # Extract a filesystem safe label
         label = job_description[:60].strip()
         if len(job_description) > 60:
             label += "…"
-            
-        resume_id = save_resume(
-            tex_string=tex_string,
-            pdf_path=pdf_path,
-            resume_type="tailored",
-            label=label,
-            job_description=job_description
-        )
+
+        # Compile to PDF (isolated per-request dir) and persist
+        with _isolated_compile(tex_string) as pdf_path:
+            resume_id = save_resume(
+                tex_string=tex_string,
+                pdf_path=pdf_path,
+                resume_type="tailored",
+                label=label,
+                job_description=job_description
+            )
         
         return jsonify({
             "status": "ok",
@@ -729,23 +789,23 @@ def api_tailor_download(session_id):
         job_context = session_service.load_job_context(session_id)
         job_description = job_context.get("job_description", "")
 
-        # Render and compile
+        # Render LaTeX
         tex_string = render_latex(profile)
-        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
 
         # Build a label from the job description
         label = job_description[:60].strip()
         if len(job_description) > 60:
             label += "…"
 
-        # Persist to library
-        resume_id = save_resume(
-            tex_string=tex_string,
-            pdf_path=pdf_path,
-            resume_type="tailored",
-            label=label,
-            job_description=job_description,
-        )
+        # Compile (isolated per-request dir) and persist to library
+        with _isolated_compile(tex_string) as pdf_path:
+            resume_id = save_resume(
+                tex_string=tex_string,
+                pdf_path=pdf_path,
+                resume_type="tailored",
+                label=label,
+                job_description=job_description,
+            )
 
         # Get path to the saved PDF in the library to ensure we return the persistent, isolated copy
         saved_pdf_path = get_resume_path(resume_id, "pdf")
@@ -793,22 +853,27 @@ def api_tailor_preview(session_id, version_type, version_id):
             return "Invalid preview version type", 400
             
         # Compile LaTeX to PDF on-demand inside a temporary directory
-        import tempfile
-        from pathlib import Path as TempPath
-        
         tex_string = render_latex(profile)
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = TempPath(temp_dir)
-            pdf_filepath = compile_pdf(tex_string, temp_path)
-            
-            # Send file to client
-            return send_file(
-                pdf_filepath,
-                mimetype="application/pdf",
-                as_attachment=False
-            )
-            
+
+        with _isolated_compile(tex_string) as pdf_filepath:
+            # Read the compiled bytes into memory BEFORE the temp directory
+            # is cleaned up. send_file(path, ...) would otherwise hand back
+            # a Response whose file object is still open when this `with`
+            # block exits (temp dir deletion happens as part of unwinding
+            # the `return` statement, before the WSGI layer has streamed the
+            # body) — on Windows that's a guaranteed PermissionError trying
+            # to delete a file that's still open; on other platforms it's a
+            # latent race either way. Serving from an in-memory BytesIO has
+            # no such lifetime dependency.
+            pdf_bytes = pdf_filepath.read_bytes()
+
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=False,
+        )
+
+
     except Exception as e:
         print(f"Error compiling on-the-fly preview: {str(e)}")
         import traceback
@@ -882,9 +947,8 @@ def api_generate_tailored_resume():
         # ── Step 4: Convert to Profile for rendering ─────────
         tailored_profile = tailored.to_profile()
 
-        # ── Step 5: Render LaTeX → PDF ────────────────────────
+        # ── Step 5: Render LaTeX ───────────────────────────────
         tex_string = render_latex(tailored_profile)
-        pdf_path = compile_pdf(tex_string, _RESUMES_DIR)
 
         # ── Step 6: Persist to the resume library ─────────────
         # Extract a meaningful label from the job description.
@@ -894,13 +958,15 @@ def api_generate_tailored_resume():
         if len(job_description) > 60:
             label += "…"
 
-        resume_id = save_resume(
-            tex_string=tex_string,
-            pdf_path=pdf_path,
-            resume_type="tailored",
-            label=label,
-            job_description=job_description,
-        )
+        # Compile to PDF (isolated per-request dir) and persist
+        with _isolated_compile(tex_string) as pdf_path:
+            resume_id = save_resume(
+                tex_string=tex_string,
+                pdf_path=pdf_path,
+                resume_type="tailored",
+                label=label,
+                job_description=job_description,
+            )
 
         # ── Step 7: Return JSON with the resume ID ────────────
         return jsonify({
@@ -1032,8 +1098,64 @@ def api_delete_resume(resume_id):
         return jsonify({"error": f"Failed to delete resume: {str(e)}"}), 500
 
 
+@app.route("/api/resumes/<resume_id>", methods=["PATCH"])
+def api_rename_resume(resume_id):
+    """
+    Rename a saved resume's display label (the folder/ID is unchanged, so
+    existing download links keep working).
+    """
+    data = request.get_json()
+    if not data or "label" not in data:
+        return jsonify({"error": "Missing 'label' parameter."}), 400
+
+    try:
+        meta = rename_resume(resume_id, data["label"])
+        return jsonify({"status": "ok", "label": meta["label"]})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to rename resume: {str(e)}"}), 500
+
+
+@app.route("/api/resumes/<resume_id>/duplicate", methods=["POST"])
+def api_duplicate_resume(resume_id):
+    """
+    Duplicate a saved resume (tex + pdf + metadata) into a new library
+    entry, so it can be branched and edited independently of the original.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        new_id = duplicate_resume(resume_id, data.get("label"))
+        return jsonify({"status": "ok", "id": new_id})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to duplicate resume: {str(e)}"}), 500
+
+
 # ── Step 4: Run the dev server ───────────────────────────────
 if __name__ == "__main__":
     # This block only executes when you run `python app.py` directly.
     # It will NOT run when a production server (gunicorn, etc.) imports the module.
-    app.run(debug=True, port=5000)
+
+    # Sweep out abandoned tailoring sessions (storage/sessions/) older than
+    # a week. These are scratch workspace state, not permanent records —
+    # finished resumes already live independently in the Resume Library.
+    # Without this, the directory grows without bound across restarts.
+    removed = session_service.cleanup_expired_sessions()
+    if removed:
+        print(f"Cleaned up {removed} expired tailoring session(s).")
+
+    # debug=True enables Werkzeug's auto-reloader AND its interactive
+    # in-browser debugger, which lets anyone who can reach the port
+    # execute arbitrary Python via a shell in the traceback page. That's
+    # fine on localhost during development but must never be the
+    # unconditional default — opt in explicitly with FLASK_DEBUG=1 (e.g.
+    # in your .env file) rather than having it hardcoded on.
+    debug_mode = os.getenv("FLASK_DEBUG", "0").strip().lower() in ("1", "true", "yes")
+    port = int(os.getenv("PORT", "5000"))
+    app.run(debug=debug_mode, port=port)

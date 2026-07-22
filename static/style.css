@@ -1245,6 +1245,78 @@ body:not(.no-transition) .theme-toggle {
 
 /* ── Resume Library ────────────────────────────────────────── */
 
+.library-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-md);
+}
+
+.library-search {
+    position: relative;
+    flex: 1 1 220px;
+    min-width: 180px;
+}
+
+.library-search-icon {
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.library-search input {
+    width: 100%;
+    padding: 0.5rem 0.75rem 0.5rem 2.1rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    transition: border-color var(--transition-fast);
+}
+
+.library-search input:focus {
+    outline: none;
+    border-color: var(--border-accent);
+}
+
+.library-type-filter {
+    display: flex;
+    gap: 0.25rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem;
+    flex-shrink: 0;
+}
+
+.library-filter-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: calc(var(--radius-sm) - 2px);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.library-filter-btn:hover {
+    color: var(--text-primary);
+}
+
+.library-filter-btn.active {
+    background: var(--accent-solid);
+    color: var(--text-on-accent);
+}
+
 .library-empty {
     color: var(--text-muted);
     font-size: 0.9rem;
@@ -1558,6 +1630,28 @@ body.builder-active .save-bar {
     line-height: 1.4;
 }
 
+/* "Master Resume Available" tag inside the Update Personal Information button */
+.action-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    margin-bottom: var(--space-xs);
+    border-radius: var(--radius-full);
+    background: var(--success);
+    color: var(--text-on-accent);
+    font-family: 'Sora', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.action-tag-icon {
+    width: 11px;
+    height: 11px;
+}
+
 /* Section Header Titles */
 .home-section-title {
     font-family: 'Sora', sans-serif;
@@ -1571,78 +1665,60 @@ body.builder-active .save-bar {
     padding-bottom: var(--space-xs);
 }
 
-/* Master Resume Card */
-.status-card {
-    background-color: var(--bg-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    padding: var(--space-xl);
-    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
-}
-
-.status-card:hover {
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-card);
-}
-
-.status-card-header {
+/* Section title with a trailing action (e.g. History's "See All") */
+.home-section-title-row {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
+    justify-content: space-between;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: var(--space-xs);
+}
+
+.home-section-title-row .home-section-title {
+    margin-bottom: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.btn-see-all {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.78rem;
+    flex-shrink: 0;
+}
+
+.btn-see-all .btn-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* Resume Library redirect card (builder page) */
+.library-redirect-desc {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
     margin-bottom: var(--space-md);
 }
 
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.status-title {
-    font-family: 'Sora', sans-serif;
-    font-size: 1.2rem;
-    font-weight: 700;
-}
-
-.status-icon-available {
-    color: var(--success);
-    width: 24px;
-    height: 24px;
-}
-
-.status-icon-missing {
-    color: var(--warning);
-    width: 24px;
-    height: 24px;
-}
-
-.status-date {
+/* Home page footer */
+.home-footer {
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-lg);
+    text-align: center;
     font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.home-footer a {
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color var(--transition-fast);
 }
 
-.status-desc {
-    font-size: 0.95rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-xl);
-    line-height: 1.5;
-}
-
-.status-card-actions {
-    display: flex;
-    gap: var(--space-md);
-}
-
-/* Available vs Missing Card Modifier Classes */
-.status-card.status-available {
-    border-left: 4px solid var(--success);
-}
-
-.status-card.status-missing {
-    border-left: 4px solid var(--warning);
+.home-footer a:hover {
+    color: var(--text-primary);
 }
 
 /* Coming Soon & Placeholder Card Views */
@@ -1701,11 +1777,6 @@ body.builder-active .save-bar {
 @media (max-width: 768px) {
     .home-actions {
         grid-template-columns: 1fr;
-    }
-    
-    .status-card-header {
-        flex-direction: column;
-        align-items: flex-start;
     }
 }
 
@@ -3072,6 +3143,20 @@ body.workspace-active .workspace-right-panel {
     width: 14px;
     height: 14px;
     color: var(--success);
+}
+
+/* Autosave status states — see setSaveStatus() in app.js */
+.bottom-bar-center.is-saving .save-status-icon {
+    color: var(--text-secondary);
+    animation: spin 900ms linear infinite;
+}
+
+.bottom-bar-center.is-error {
+    color: var(--error);
+}
+
+.bottom-bar-center.is-error .save-status-icon {
+    color: var(--error);
 }
 
 .chat-input-row button {

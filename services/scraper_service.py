@@ -120,6 +120,12 @@ _MIN_TEXT_LENGTH = 50
 # short enough to not hang the UI.
 _REQUEST_TIMEOUT = 15
 
+# Hard ceiling on how much of the response body we'll download.  A real
+# job-posting page's HTML is rarely more than a few hundred KB; this is a
+# generous ceiling that still bounds worst-case memory/bandwidth use against
+# a misbehaving or malicious server streaming an unbounded response.
+_MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
+
 # A realistic User-Agent header.  Some sites return different
 # content (or block entirely) based on this string.  We mimic
 # a recent Chrome browser on Windows.
@@ -186,8 +192,32 @@ def fetch_job_description(url: str) -> str:
             # Follow redirects (default), but cap at 5 to avoid
             # infinite redirect loops on broken sites.
             allow_redirects=True,
+            # Stream so we can enforce _MAX_RESPONSE_BYTES ourselves instead
+            # of buffering an arbitrarily large body into memory up front.
+            stream=True,
         )
         response.raise_for_status()
+
+        # ── Reject early if the server tells us up front ──────
+        content_length = response.headers.get("Content-Length")
+        if content_length and int(content_length) > _MAX_RESPONSE_BYTES:
+            raise ScrapingError(
+                "This page is too large to process. Please paste the "
+                "job description text manually."
+            )
+
+        # ── Read up to the cap, abandoning the connection if exceeded ──
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=65536):
+            total += len(chunk)
+            if total > _MAX_RESPONSE_BYTES:
+                raise ScrapingError(
+                    "This page is too large to process. Please paste the "
+                    "job description text manually."
+                )
+            chunks.append(chunk)
+        raw_bytes = b"".join(chunks)
 
     except requests.exceptions.Timeout:
         raise ScrapingError(
@@ -228,12 +258,22 @@ def fetch_job_description(url: str) -> str:
             "description text manually."
         )
 
-    # ── Step 3: Parse HTML and strip noise ────────────────────
+    # ── Step 3: Decode and parse HTML, stripping noise ────────
+    # We read the body manually above (via iter_content) to enforce
+    # _MAX_RESPONSE_BYTES, so response.text isn't usable here — the
+    # stream was already consumed. Decode using the charset requests
+    # detected from the response headers, falling back to UTF-8.
+    encoding = response.encoding or "utf-8"
+    try:
+        raw_html = raw_bytes.decode(encoding, errors="replace")
+    except (LookupError, TypeError):
+        raw_html = raw_bytes.decode("utf-8", errors="replace")
+
     # BeautifulSoup builds an in-memory DOM tree from the raw
     # HTML.  We then remove elements that carry navigation,
     # scripts, styles, and other boilerplate — leaving only the
     # content-bearing elements.
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(raw_html, "html.parser")
 
     # .decompose() removes each matched tag AND all its children
     # from the tree entirely.  This is more thorough than just

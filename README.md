@@ -134,13 +134,38 @@ Follow these steps to configure your environment and start the application:
 
 ---
 
+## 🧪 Running Tests
+
+BuildR has a `pytest` suite covering the deterministic core logic (LaTeX escaping/rendering, the AI anti-hallucination sanitizer, resume-library and session path safety, list-detection heuristics) plus Flask route tests against fully isolated storage — nothing under `tests/` touches your real `storage/` directory.
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+Tests tagged as requiring Tectonic (real PDF compilation) are skipped automatically if it isn't installed. No `GEMINI_API_KEY` is required — the AI-related tests exercise the anti-hallucination sanitizer function directly rather than calling the Gemini API.
+
+---
+
 ## 🔒 Environment Variables
 
-BuildR uses a `.env` file to securely retrieve settings at runtime. Create a `.env` file in the project's root folder:
+BuildR uses a `.env` file to securely retrieve settings at runtime. Copy [.env.example](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/.env.example) to `.env` in the project's root folder and fill in your key:
 
 ```env
-# Google Gemini Developer API key
+# Google Gemini Developer API key (required)
 GEMINI_API_KEY=your_actual_gemini_api_key_here
+
+# Enable Flask's auto-reload + interactive debugger (optional, default: off).
+# Only turn this on for local development — the debugger lets anyone who can
+# reach the port run arbitrary Python. Never enable it if the server is
+# reachable from outside your own machine.
+FLASK_DEBUG=1
+
+# Port the dev server listens on (optional, default: 5000)
+PORT=5000
+
+# Timeout (ms) for Gemini API calls (optional, default: 90000)
+GEMINI_TIMEOUT_MS=90000
 ```
 
 > [!WARNING]

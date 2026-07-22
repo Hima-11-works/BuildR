@@ -39,12 +39,15 @@
 #
 # This is a well-known convention in the LaTeX+Jinja2 community.
 #
-# ESCAPE ORDER MATTERS
-# ────────────────────
-# We MUST escape the backslash (\) FIRST.  If we escaped & → \&
-# before escaping \, then the backslash in \& would itself get
-# escaped to \\&, which is wrong.  By handling \ first, all
-# subsequent replacements produce safe output.
+# ESCAPING IS A SINGLE REGEX PASS
+# ────────────────────────────────
+# escape_latex() below replaces all 10 LaTeX specials in one re.sub()
+# pass over the ORIGINAL string, rather than ten sequential .replace()
+# calls. That matters because \'s own replacement text, \textbackslash{},
+# contains literal { and } — running further .replace() calls after it
+# would re-escape those into \{\}, corrupting the output. A single pass
+# never rescans replacement text, so this can't happen regardless of
+# character order. See the comment above _LATEX_ESCAPE_MAP for detail.
 # ──────────────────────────────────────────────────────────────
 
 from __future__ import annotations
@@ -70,19 +73,35 @@ _TEMPLATES_DIR = _PROJECT_ROOT / "templates_latex"
 # ══════════════════════════════════════════════════════════════
 
 # The 10 LaTeX special characters and their safe replacements.
-# ORDER MATTERS — backslash must be first (see module docstring).
-_LATEX_ESCAPE_RULES: list[tuple[str, str]] = [
-    ("\\", r"\textbackslash{}"),   # \ → \textbackslash{}
-    ("&",  r"\&"),                 # & → \&   (column separator)
-    ("%",  r"\%"),                 # % → \%   (comment character)
-    ("$",  r"\$"),                 # $ → \$   (math mode toggle)
-    ("#",  r"\#"),                 # # → \#   (macro parameter)
-    ("_",  r"\_"),                 # _ → \_   (subscript in math)
-    ("{",  r"\{"),                 # { → \{   (group open)
-    ("}",  r"\}"),                 # } → \}   (group close)
-    ("~",  r"\textasciitilde{}"),  # ~ → \textasciitilde{}
-    ("^",  r"\textasciicircum{}"), # ^ → \textasciicircum{}
-]
+#
+# WHY A SINGLE REGEX PASS, NOT SEQUENTIAL .replace() CALLS
+# -----------------------------------------------------------
+# An earlier version of this function ran ten sequential str.replace()
+# calls in order (backslash first, so its own output wouldn't be
+# re-escaped by a later rule). That guards against the *forward* problem
+# but not the reverse one: the backslash rule's own replacement text,
+# \textbackslash{}, contains literal { and } — characters that appear
+# LATER in the same rule list. Escaping a lone backslash produced
+# \textbackslash\{\} instead of \textbackslash{}, silently corrupting
+# any resume content containing a literal backslash.
+#
+# A single re.sub() pass with a lookup callback replaces every special
+# character exactly once based on the ORIGINAL string — replacement
+# text is never re-scanned — so this class of bug can't recur, and rule
+# order no longer matters.
+_LATEX_ESCAPE_MAP: dict[str, str] = {
+    "\\": r"\textbackslash{}",
+    "&":  r"\&",                 # column separator
+    "%":  r"\%",                 # comment character
+    "$":  r"\$",                 # math mode toggle
+    "#":  r"\#",                 # macro parameter
+    "_":  r"\_",                 # subscript in math
+    "{":  r"\{",                 # group open
+    "}":  r"\}",                 # group close
+    "~":  r"\textasciitilde{}",
+    "^":  r"\textasciicircum{}",
+}
+_LATEX_ESCAPE_RE = re.compile("|".join(re.escape(c) for c in _LATEX_ESCAPE_MAP))
 
 
 def escape_latex(value: str) -> str:
@@ -116,9 +135,7 @@ def escape_latex(value: str) -> str:
     # and C1 control characters (127-159) to prevent Tectonic compilation errors.
     value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", value)
 
-    for char, replacement in _LATEX_ESCAPE_RULES:
-        value = value.replace(char, replacement)
-    return value
+    return _LATEX_ESCAPE_RE.sub(lambda m: _LATEX_ESCAPE_MAP[m.group(0)], value)
 
 
 def _escape_recursive(obj: Any) -> Any:
@@ -160,7 +177,7 @@ def _escape_recursive(obj: Any) -> Any:
 # ══════════════════════════════════════════════════════════════
 
 def _create_latex_env() -> jinja2.Environment:
-    """
+    r"""
     Build a Jinja2 Environment configured for LaTeX templates.
 
     KEY CONFIGURATION
@@ -297,7 +314,14 @@ def render_latex(profile: Profile) -> str:
 
     # ── Step 2: Extract rich text fields ──────────────────────
     rich_fields = {}
-    
+
+    # Personal info links — the URL must stay raw (unescaped) so that
+    # \href{} receives a literal target. Only the label is user-facing
+    # display text, so only it goes through LaTeX escaping. Without this,
+    # a link containing &, %, or # (e.g. a query string) would be mangled
+    # by escape_latex() into a dead/garbled hyperlink.
+    rich_fields["personal_info_links"] = data["personal_info"].pop("links", {})
+
     # Experience bullets
     rich_fields["experience_bullets"] = []
     rich_fields["experience_list_type"] = []
@@ -328,6 +352,18 @@ def render_latex(profile: Profile) -> str:
     escaped_data = _escape_recursive(data)
 
     # ── Step 4: Convert and restore rich text fields ──────────
+    # Personal info links — escape only the label (display text);
+    # keep the URL raw so \href{} gets a literal, working target.
+    # Also normalize URLs missing a scheme, same as project links.
+    escaped_links = {}
+    for label, url in rich_fields["personal_info_links"].items():
+        safe_label = escape_latex(label)
+        raw_url = (url or "").strip()
+        if raw_url and not raw_url.startswith(("http://", "https://", "mailto:")):
+            raw_url = "https://" + raw_url
+        escaped_links[safe_label] = raw_url
+    escaped_data["personal_info"]["links"] = escaped_links
+
     # Experience
     for i, exp in enumerate(escaped_data.get("experience", [])):
         bullets = rich_fields["experience_bullets"][i]

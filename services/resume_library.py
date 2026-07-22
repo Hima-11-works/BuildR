@@ -63,13 +63,6 @@ _TEX_FILENAME = "resume.tex"
 _PDF_FILENAME = "resume.pdf"
 _META_FILENAME = "metadata.json"
 
-# ── Files produced by pdf_service.compile_pdf() ───────────────
-# compile_pdf() writes master_resume.tex and master_resume.pdf
-# into whatever output_dir we give it.  After compilation, we
-# rename these to our canonical names (resume.tex, resume.pdf).
-_COMPILED_TEX = "master_resume.tex"
-_COMPILED_PDF = "master_resume.pdf"
-
 
 def _sanitize_label(raw: str) -> str:
     """
@@ -124,30 +117,28 @@ def _validate_resume_id(resume_id: str) -> Path:
     It prevents path traversal by:
       1. Constructing the candidate path from RESUMES_DIR / id
       2. Resolving to an absolute canonical path
-      3. Verifying it lives inside RESUMES_DIR
+      3. Verifying it lives strictly *inside* RESUMES_DIR (not equal to
+         it — resume_id="." would otherwise resolve to RESUMES_DIR
+         itself, and delete_resume(".") would rmtree() the entire
+         library)
 
     Raises
     ------
     ValueError
         If the ID is empty, contains suspicious characters,
-        or resolves to a path outside RESUMES_DIR.
+        or resolves to a path outside (or equal to) RESUMES_DIR.
     FileNotFoundError
         If the resolved folder doesn't exist on disk.
     """
     if not resume_id or not resume_id.strip():
         raise ValueError("Resume ID cannot be empty.")
 
-    # Construct and resolve
+    # Construct and resolve. .resolve() collapses .., follows symlinks, etc.
     candidate = (RESUMES_DIR / resume_id).resolve()
     base = RESUMES_DIR.resolve()
 
-    # ── Path traversal check ──────────────────────────────────
-    # .resolve() collapses .., follows symlinks, etc.
-    # We verify the result is still inside our base directory.
-    if not str(candidate).startswith(str(base) + ("/" if not str(base).endswith("/") else "")):
-        # Use os.sep check that works on Windows too
-        if candidate != base and not str(candidate).startswith(str(base) + "\\") and not str(candidate).startswith(str(base) + "/"):
-            raise ValueError(f"Invalid resume ID: path traversal detected.")
+    if candidate == base or not candidate.is_relative_to(base):
+        raise ValueError("Invalid resume ID: path traversal detected.")
 
     if not candidate.is_dir():
         raise FileNotFoundError(f"Resume '{resume_id}' not found.")
@@ -256,6 +247,36 @@ def list_resumes() -> list[dict]:
     return resumes
 
 
+def delete_resumes_by_type(resume_type: str) -> int:
+    """
+    Delete every saved resume of the given type (e.g. "master").
+
+    WHY THIS EXISTS
+    ----------------
+    Every "Generate Master PDF" click used to call save_resume() with a
+    fresh timestamp, so regenerating the same master resume after every
+    profile edit piled up an ever-growing stack of "Master" entries that
+    only differed by date. The master resume is a single canonical
+    document, not a history — callers use this to clear out prior master
+    entries immediately before saving the newly generated one, so exactly
+    one "Master" entry ever exists in the library at a time. Tailored
+    resumes are unaffected; each one is a distinct, intentionally-kept
+    artifact for a specific job application.
+
+    Returns the number of resume folders removed.
+    """
+    removed = 0
+    for meta in list_resumes():
+        if meta.get("type") != resume_type:
+            continue
+        try:
+            delete_resume(meta["id"])
+            removed += 1
+        except (ValueError, FileNotFoundError):
+            continue
+    return removed
+
+
 def get_resume_path(resume_id: str, file_type: str) -> Path:
     """
     Get the path to a specific file in a resume folder.
@@ -328,3 +349,94 @@ def delete_resume(resume_id: str) -> bool:
     # ── Safe to delete ────────────────────────────────────────
     shutil.rmtree(resume_dir)
     return True
+
+
+def rename_resume(resume_id: str, new_label: str) -> dict:
+    """
+    Update a saved resume's display label in metadata.json.
+
+    Only the human-readable label changes — the folder name / resume ID
+    stays the same, so existing download links keep working.
+
+    Parameters
+    ----------
+    resume_id : str
+        The folder name / resume ID to rename.
+    new_label : str
+        The new display label. Whitespace-only input is rejected.
+
+    Returns
+    -------
+    dict
+        The updated metadata.
+
+    Raises
+    ------
+    ValueError
+        If the resume ID fails validation, or new_label is empty.
+    FileNotFoundError
+        If the resume doesn't exist.
+    """
+    new_label = (new_label or "").strip()
+    if not new_label:
+        raise ValueError("Label cannot be empty.")
+
+    resume_dir = _validate_resume_id(resume_id)
+    meta_path = resume_dir / _META_FILENAME
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Metadata not found for resume '{resume_id}'.")
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["label"] = new_label
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    meta["id"] = resume_id
+    return meta
+
+
+def duplicate_resume(resume_id: str, new_label: Optional[str] = None) -> str:
+    """
+    Copy a saved resume (tex + pdf + metadata) into a new library entry.
+
+    Useful for branching a tailored resume before making further manual
+    edits, without losing the original.
+
+    Parameters
+    ----------
+    resume_id : str
+        The folder name / resume ID to duplicate.
+    new_label : str, optional
+        Display label for the copy. Defaults to "<original label> (Copy)".
+
+    Returns
+    -------
+    str
+        The new resume's ID.
+
+    Raises
+    ------
+    ValueError
+        If the source resume ID fails validation.
+    FileNotFoundError
+        If the source resume doesn't exist.
+    """
+    source_dir = _validate_resume_id(resume_id)
+    meta_path = source_dir / _META_FILENAME
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Metadata not found for resume '{resume_id}'.")
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    label = (new_label or "").strip() or f"{meta.get('label', 'Resume')} (Copy)"
+
+    new_id = _make_resume_id(label)
+    new_dir = RESUMES_DIR / new_id
+    shutil.copytree(source_dir, new_dir)
+
+    new_meta = dict(meta)
+    new_meta["id"] = new_id
+    new_meta["label"] = label
+    new_meta["date"] = datetime.now().isoformat()
+    (new_dir / _META_FILENAME).write_text(
+        json.dumps(new_meta, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    return new_id
