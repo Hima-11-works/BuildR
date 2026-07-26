@@ -31,6 +31,7 @@
 import io
 import json
 import os
+import secrets
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path as _Path
@@ -77,6 +78,25 @@ app = Flask(__name__)
 # MB at most) with headroom, while still bounding worst-case memory use.
 # Flask returns a 413 automatically once this is exceeded.
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
+
+# ── Session cookie security ──────────────────────────────────
+# Flask's session cookies are cryptographically signed with this
+# key.  In production, set SECRET_KEY in your environment (or .env).
+# If not set, we generate a random key — sessions won't survive
+# server restarts, but it's safe for dev/demo usage.
+app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+
+# ── Startup cleanup ──────────────────────────────────────────
+# Sweep out abandoned tailoring sessions (storage/sessions/) older
+# than a week.  These are scratch workspace state, not permanent
+# records — finished resumes live independently in the Resume Library.
+# This runs at module-import time so it executes under both
+# `python app.py` and `gunicorn app:app`.  The operation is idempotent
+# (shutil.rmtree with ignore_errors=True), so concurrent Gunicorn
+# workers importing the module simultaneously is harmless.
+_removed = session_service.cleanup_expired_sessions()
+if _removed:
+    print(f"Cleaned up {_removed} expired tailoring session(s).")
 
 
 @app.errorhandler(413)
@@ -1141,14 +1161,6 @@ def api_duplicate_resume(resume_id):
 if __name__ == "__main__":
     # This block only executes when you run `python app.py` directly.
     # It will NOT run when a production server (gunicorn, etc.) imports the module.
-
-    # Sweep out abandoned tailoring sessions (storage/sessions/) older than
-    # a week. These are scratch workspace state, not permanent records —
-    # finished resumes already live independently in the Resume Library.
-    # Without this, the directory grows without bound across restarts.
-    removed = session_service.cleanup_expired_sessions()
-    if removed:
-        print(f"Cleaned up {removed} expired tailoring session(s).")
 
     # debug=True enables Werkzeug's auto-reloader AND its interactive
     # in-browser debugger, which lets anyone who can reach the port
