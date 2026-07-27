@@ -206,7 +206,43 @@ Navigate to the **Resume Library** tab to review previous downloads. Here you ca
 
 ---
 
+## ☁️ Deployment (Render)
 
+BuildR is configured for deployment on [Render](https://render.com/) as a **Web Service** using the Python native runtime.
+
+### Service Configuration
+
+| Setting | Value |
+|---|---|
+| **Build Command** | `./render-build.sh` |
+| **Start Command** | `gunicorn --bind 0.0.0.0:$PORT app:app` (from [Procfile](Procfile)) |
+
+### Required Environment Variables
+
+Set the following in the Render Dashboard under **Environment**:
+
+| Variable | Description |
+|---|---|
+| `GEMINI_API_KEY` | Your Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey)) |
+
+### How Tectonic is Installed
+
+The [render-build.sh](render-build.sh) build script automatically:
+
+1. Installs Python dependencies from `requirements.txt`.
+2. Downloads a **pinned version** of the [Tectonic](https://tectonic-typesetting.github.io/) LaTeX compiler (v0.16.9) from GitHub Releases.
+3. Places the binary at `$HOME/tectonic`.
+
+**No Procfile modification is needed.** The existing [`_find_tectonic()`](services/pdf_service.py) function in `pdf_service.py` already searches `Path.home() / "tectonic"` as a fallback location. By placing the binary there during the build phase, the application discovers it automatically at runtime — no `PATH` changes, no code changes.
+
+### Updating Tectonic
+
+To upgrade the pinned Tectonic version, edit the `TECTONIC_VERSION` variable at the top of `render-build.sh` and redeploy. Available versions are listed on the [Tectonic Releases](https://github.com/tectonic-typesetting/tectonic/releases) page.
+
+> [!NOTE]
+> The **first PDF compilation** after a fresh deploy may take 30–60 seconds longer than usual because Tectonic downloads required LaTeX packages on-the-fly. Subsequent compilations use a cache and are significantly faster. The application's 120-second subprocess timeout accommodates this.
+
+---
 
 ## 📄 License
 
