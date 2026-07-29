@@ -63,10 +63,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # ── Custom exception for compilation failures ─────────────────
@@ -94,16 +97,22 @@ def _find_tectonic() -> str:
     WHY WE NEED THIS
     -----------------
     On Windows, users often download tectonic.exe and drop it in
-    their home directory (C:\\Users\\<name>\\tectonic.exe) without
+    their home directory (C:\\\\Users\\\\<name>\\\\tectonic.exe) without
     adding that folder to PATH.  subprocess.run(["tectonic", ...])
     raises FileNotFoundError because it only searches PATH.
 
+    On Render we install Tectonic to /usr/local/bin/tectonic during
+    the build phase so it sits on PATH in the runtime image; that is
+    the first place we look. The home-directory fallback is kept for
+    legacy local Windows setups.
+
     SEARCH ORDER
     ------------
-    1. PATH (via shutil.which — the standard approach)
-    2. User's home directory (common drop location on Windows)
-    3. Give up and return "tectonic" — let subprocess raise the
-       FileNotFoundError so our caller can produce a helpful message.
+    1. PATH (via shutil.which)
+    2. User's home directory (~/tectonic and ~/tectonic.exe)
+    3. Return the bare name "tectonic" so subprocess raises
+       FileNotFoundError and our caller can produce a helpful
+       message. Every probe is logged for debuggability.
 
     Returns
     -------
@@ -111,23 +120,43 @@ def _find_tectonic() -> str:
         Absolute path to the tectonic binary, or "tectonic" if
         not found (so subprocess gives a clean error).
     """
+    candidates: list[str] = []
+
     # ── 1. Check PATH ─────────────────────────────────────────
-    found = shutil.which("tectonic")
-    if found:
-        return found
+    on_path = shutil.which("tectonic")
+    if on_path:
+        candidates.append(on_path)
+        logger.info("Tectonic: candidate found on PATH: %s", on_path)
 
-    # ── 2. Check user's home directory (Windows common case) ──
-    home_path = Path.home() / "tectonic.exe"
-    if home_path.exists():
-        return str(home_path)
+    # ── 2. Check user's home directory ────────────────────────
+    for home_name in ("tectonic", "tectonic.exe"):
+        home_candidate = Path.home() / home_name
+        if home_candidate.is_file():
+            candidates.append(str(home_candidate))
+            logger.info("Tectonic: candidate found in $HOME: %s", home_candidate)
 
-    # Also check without .exe (Linux/macOS)
-    home_path_unix = Path.home() / "tectonic"
-    if home_path_unix.exists():
-        return str(home_path_unix)
+    if not candidates:
+        logger.error(
+            "Tectonic binary not found on PATH or in $HOME (%s); "
+            "subprocess will likely raise FileNotFoundError.",
+            Path.home(),
+        )
+        return "tectonic"
 
-    # ── 3. Not found — return bare name for the error path ────
-    return "tectonic"
+    # Prefer the first candidate that the OS confirms is executable.
+    for candidate in candidates:
+        if os.access(candidate, os.X_OK):
+            if candidate != candidates[0]:
+                logger.info("Tectonic: using executable candidate %s", candidate)
+            return candidate
+
+    # Files exist but none are executable — surface that explicitly
+    # so callers see a clearer error than a raw PermissionError.
+    logger.warning(
+        "Tectonic: candidate files exist but none are executable: %s",
+        candidates,
+    )
+    return candidates[0] if candidates else "tectonic"
 
 
 # ── Output filenames ──────────────────────────────────────────
@@ -176,6 +205,25 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
 
     # ── Step 3: Call Tectonic ─────────────────────────────────
     tectonic_bin = _find_tectonic()
+
+    # Pre-flight: if the resolver fell back to the bare name "tectonic"
+    # and that name isn't resolvable on PATH, fail fast with the helpful
+    # message instead of letting subprocess raise an opaque error.
+    _NOT_FOUND_MSG = (
+        "Tectonic is not installed or not on your PATH. "
+        "Install it with one of:\n"
+        "  Windows:  winget install --id=AnotherRedFox.Tectonic -e\n"
+        "  macOS:    brew install tectonic\n"
+        "  Linux:    cargo install tectonic\n"
+        "  Any OS:   conda install -c conda-forge tectonic\n"
+        "On Render, ensure render-build.sh ran successfully and that "
+        "Tectonic is at /usr/local/bin/tectonic.\n"
+        "Then restart the server."
+    )
+    if tectonic_bin == "tectonic" and shutil.which("tectonic") is None:
+        logger.error(_NOT_FOUND_MSG)
+        raise PdfCompilationError(_NOT_FOUND_MSG, log="")
+
     try:
         result = subprocess.run(
             [tectonic_bin, _TEX_FILENAME],
@@ -186,15 +234,15 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
         )
     except FileNotFoundError:
         # Tectonic binary is not on PATH
+        raise PdfCompilationError(_NOT_FOUND_MSG, log="")
+    except PermissionError as exc:
+        # The file was located but isn't executable (chmod +x missing
+        # or stripped during image build). Surface a clear message.
+        logger.error("Tectonic found but not executable: %s", tectonic_bin)
         raise PdfCompilationError(
-            "Tectonic is not installed or not on your PATH. "
-            "Install it with one of:\n"
-            "  Windows:  winget install --id=AnotherRedFox.Tectonic -e\n"
-            "  macOS:    brew install tectonic\n"
-            "  Linux:    cargo install tectonic\n"
-            "  Any OS:   conda install -c conda-forge tectonic\n"
-            "Then restart the server.",
-            log="",
+            f"Tectonic was located at {tectonic_bin} but is not "
+            "executable. Rebuild the deployment to reapply chmod +x.",
+            log=str(exc),
         )
     except subprocess.TimeoutExpired:
         raise PdfCompilationError(
