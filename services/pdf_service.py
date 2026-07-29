@@ -98,19 +98,20 @@ def _find_tectonic() -> str:
     -----------------
     On Windows, users often download tectonic.exe and drop it in
     their home directory (C:\\\\Users\\\\<name>\\\\tectonic.exe) without
-    adding that folder to PATH.  subprocess.run(["tectonic", ...])
+    adding that folder to PATH. subprocess.run(["tectonic", ...])
     raises FileNotFoundError because it only searches PATH.
 
-    On Render we install Tectonic to /usr/local/bin/tectonic during
-    the build phase so it sits on PATH in the runtime image; that is
-    the first place we look. The home-directory fallback is kept for
-    legacy local Windows setups.
+    On Render we install Tectonic to <project_root>/.tectonic/
+    tectonic via render-build.sh. The project root is carried into
+    the runtime image verbatim, so this lookup is reliable across
+    both local development and Render deploys.
 
     SEARCH ORDER
     ------------
-    1. PATH (via shutil.which)
-    2. User's home directory (~/tectonic and ~/tectonic.exe)
-    3. Return the bare name "tectonic" so subprocess raises
+    1. PATH (via shutil.which — covers system / apt installs)
+    2. <project_root>/.tectonic/tectonic (render-build.sh target)
+    3. ~/tectonic and ~/tectonic.exe (legacy local Windows setup)
+    4. Return the bare name "tectonic" so subprocess raises
        FileNotFoundError and our caller can produce a helpful
        message. Every probe is logged for debuggability.
 
@@ -128,7 +129,16 @@ def _find_tectonic() -> str:
         candidates.append(on_path)
         logger.info("Tectonic: candidate found on PATH: %s", on_path)
 
-    # ── 2. Check user's home directory ────────────────────────
+    # ── 2. Check <project_root>/.tectonic/tectonic ────────────
+    # This file is the deployment target on Render. Project root
+    # is two parents up from this file (services/pdf_service.py).
+    project_root = Path(__file__).resolve().parent.parent
+    bundled = project_root / ".tectonic" / "tectonic"
+    if bundled.is_file():
+        candidates.append(str(bundled))
+        logger.info("Tectonic: candidate found in .tectonic/: %s", bundled)
+
+    # ── 3. Check user's home directory ────────────────────────
     for home_name in ("tectonic", "tectonic.exe"):
         home_candidate = Path.home() / home_name
         if home_candidate.is_file():
@@ -217,7 +227,7 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
         "  Linux:    cargo install tectonic\n"
         "  Any OS:   conda install -c conda-forge tectonic\n"
         "On Render, ensure render-build.sh ran successfully and that "
-        "Tectonic is at /usr/local/bin/tectonic.\n"
+        "Tectonic is at .tectonic/tectonic inside the project root.\n"
         "Then restart the server."
     )
     if tectonic_bin == "tectonic" and shutil.which("tectonic") is None:

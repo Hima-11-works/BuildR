@@ -24,6 +24,12 @@ venv/
 .venv/
 env/
 
+# ── Bundled toolchains ──────────────────────────────────────
+# .tectonic/ holds the LaTeX compiler binary downloaded by
+# render-build.sh. It is platform-specific (x86_64 Linux) and
+# can be 50+ MB, so it stays out of the repo.
+.tectonic/
+
 # ── IDE / editor files ──────────────────────────────────────
 .vscode/
 .idea/

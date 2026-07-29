@@ -10,22 +10,22 @@
 #
 #   1. Install Python dependencies from requirements.txt
 #   2. Download a pinned Tectonic LaTeX compiler and install
-#      it to /usr/local/bin so it is on PATH and persists
-#      into the runtime image.
+#      it into the project tree at .tectonic/tectonic so the
+#      runtime image can locate it via services/pdf_service.py.
 #
-# WHY /usr/local/bin/tectonic?
-# ----------------------------
-# Earlier revisions installed Tectonic to "$HOME/tectonic" and
-# relied on services/pdf_service.py to discover it there. That
-# broke at runtime: Render's build container writes to one
-# filesystem, the runtime container runs from another, and
-# arbitrary files in $HOME during build are not guaranteed
-# to exist in the runtime image.
+# WHY .tectonic/tectonic IN THE PROJECT DIRECTORY?
+# -----------------------------------------------
+# On Render's Python runtime the base image directories are
+# read-only (mv into /usr/local/bin fails with
+# "inter-device move ... Read-only file system"), and arbitrary
+# files written to $HOME during build are not guaranteed to
+# survive into the runtime image. The project directory itself
+# (/opt/render/project/src) IS writable during build AND is
+# carried into the runtime image, so it is the safe place to
+# drop the binary.
 #
-# /usr/local/bin is part of the runtime image's PATH on every
-# standard Render runtime, so `tectonic` is discoverable by
-# the same lookup (shutil.which) that already exists in
-# services/pdf_service.py.
+# The .tectonic/ folder is added to .gitignore so the binary
+# itself is never committed.
 #
 # TECTONIC VERSION
 # ----------------
@@ -44,7 +44,13 @@ set -o pipefail  # Fail on first error in a pipeline
 TECTONIC_VERSION="0.16.9"
 TECTONIC_ARCHIVE="tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
 TECTONIC_URL="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/${TECTONIC_ARCHIVE}"
-TECTONIC_TARGET="/usr/local/bin/tectonic"
+
+# Resolve project directory. Render's build runs with pwd at the
+# project root, so $(pwd) is reliable. We pin the install to a
+# .tectonic/ folder at that root.
+PROJECT_ROOT="$(pwd)"
+TECTONIC_DIR="${PROJECT_ROOT}/.tectonic"
+TECTONIC_BIN="${TECTONIC_DIR}/tectonic"
 
 # ── Step 1: Install Python dependencies ──────────────────────
 echo "──────────────────────────────────────────────────────────"
@@ -70,10 +76,12 @@ else
     tar -xzf "/tmp/${TECTONIC_ARCHIVE}" -C /tmp tectonic
     chmod +x /tmp/tectonic
 
-    # Move into /usr/local/bin so it is on PATH in the runtime
-    # image. Render grants its build user write access here.
-    echo "Installing tectonic to ${TECTONIC_TARGET} ..."
-    mv /tmp/tectonic "${TECTONIC_TARGET}"
+    # Install into .tectonic/ at the project root. This dir is
+    # writable during build and its contents are copied into the
+    # runtime image, so gunicorn will find it on startup.
+    echo "Installing tectonic to ${TECTONIC_BIN} ..."
+    mkdir -p "${TECTONIC_DIR}"
+    mv /tmp/tectonic "${TECTONIC_BIN}"
 
     # Clean up the downloaded archive (the binary is now in place).
     rm -f "/tmp/${TECTONIC_ARCHIVE}"
@@ -82,7 +90,8 @@ fi
 # ── Verification ─────────────────────────────────────────────
 echo "──────────────────────────────────────────────────────────"
 echo "Verifying Tectonic installation:"
-echo "  Location: $(command -v tectonic || echo '<NOT FOUND>')"
-echo "  Version:  $(${TECTONIC_TARGET} --version 2>&1 | head -n 1)"
+echo "  Location: ${TECTONIC_BIN}"
+echo "  Exists:   $([[ -x "${TECTONIC_BIN}" ]] && echo yes || echo no)"
+echo "  Version:  $(${TECTONIC_BIN} --version 2>&1 | head -n 1)"
 echo "──────────────────────────────────────────────────────────"
 echo "Build complete."
