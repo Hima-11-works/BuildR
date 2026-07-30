@@ -10,10 +10,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ai_service.py reads GEMINI_API_KEY lazily (only when a Gemini call is
+# ai_service.py reads MINIMAX_API_KEY lazily (only when an AI call is
 # actually made), but set a dummy value up front so importing it — or
 # importing app.py, which imports it — never fails during collection.
-os.environ.setdefault("GEMINI_API_KEY", "test-dummy-key")
+os.environ.setdefault("MINIMAX_API_KEY", "test-dummy-key")
 
 import pytest
 

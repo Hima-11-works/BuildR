@@ -1,44 +1,49 @@
 # ──────────────────────────────────────────────────────────────
-# services/ai_service.py — Gemini-powered resume tailoring
+# services/ai_service.py — MiniMax-powered resume tailoring
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
 # -------------------
-# One public function: tailor_resume(profile, job_description).
-# It sends the user's full profile + a job description to Gemini,
-# and receives a structured JSON response describing which items
-# to include and how to rewrite bullets for maximum relevance.
+# Public helpers:
+#   • tailor_resume(profile, job_description)
+#   • parse_resume_text(text)
+#   • analyze_job_description(job_description)
+#   • tailor_resume_v2(profile, job_description, preferences)
+#   • chat_tailor_resume(master, active, jd, message, history)
+#
+# They all send the user's profile + a job description to MiniMax
+# via an OpenAI-compatible chat-completions endpoint, and receive
+# a structured JSON response describing which items to include
+# and how to rewrite bullets for maximum relevance.
 #
 # HOW STRUCTURED OUTPUT WORKS
 # ───────────────────────────
-# The google-genai SDK lets you pass a Pydantic model class as
-# `response_schema`.  Under the hood, three things happen:
+# We use response_format={"type": "json_object"} so the model is
+# instructed (and MiniMax-side constrained) to emit only valid
+# JSON. The flow is:
 #
-# 1. SCHEMA EXTRACTION — The SDK converts TailoredProfile into a
-#    JSON Schema (field names, types, required/optional, nesting).
-#
-# 2. CONSTRAINED DECODING — Gemini's decoder is constrained at
-#    *token generation time* to only produce tokens that are valid
-#    according to the schema.  This isn't "generate then validate"
-#    — it's "prevent invalid tokens from ever being sampled."
-#    Think of it like an FSM (finite state machine) overlaid on
-#    the decoder: after producing `{"company": "`, only string
-#    tokens are allowed, never `[` or a number.
-#
-# 3. PARSING — The SDK parses the JSON response and returns it
-#    via `response.parsed` as a fully typed Pydantic object.
-#    No manual json.loads() or try/except needed.
+#   1. The system prompt says "respond with strict JSON in the
+#      schema described in the user message", and we hand the
+#      model the target Pydantic schema as a JSON-Schema dict in
+#      the user message so it knows the exact field shape.
+#   2. MiniMax returns a JSON string in the assistant message.
+#   3. We parse with `schema.model_validate_json(...)`, which:
+#        - decodes JSON,
+#        - validates types and required fields via Pydantic,
+#        - raises ValidationError on shape mismatches.
+#   4. The downstream `_sanitize_tailored_output()` performs the
+#      anti-hallucination pass against the master profile.
 #
 # WHY JSON, NOT LATEX?
 # ────────────────────
-# If we asked Gemini to output LaTeX directly:
+# If we asked the model to output LaTeX directly:
 #   • Any typo (\textbf{ without }) crashes the compiler.
 #   • The model needs to know our template's exact structure.
 #   • Template changes would require prompt rewrites.
 #   • We'd lose type safety — just a raw string to debug.
 #
 # With JSON structured output:
-#   • Constrained decoding guarantees valid JSON.
+#   • The model is constrained to valid JSON.
 #   • Pydantic validates the schema before we touch LaTeX.
 #   • Our code owns all rendering — the AI just picks content.
 #   • The template can evolve independently of the AI prompt.
@@ -60,10 +65,11 @@
 #    bullet text, the model has concrete facts to rephrase
 #    rather than vague concepts to elaborate on.
 #
-# 4. STRUCTURAL CONSTRAINTS — The response_schema forces output
-#    into typed fields (company: str, bullets: list[str]) rather
-#    than free-form prose.  It's harder to fabricate a structured
-#    record than to slip something into a paragraph.
+# 4. STRUCTURAL CONSTRAINTS — The JSON-only response format
+#    forces output into typed fields (company: str, bullets:
+#    list[str]) rather than free-form prose.  It's harder to
+#    fabricate a structured record than to slip something into
+#    a paragraph.
 #
 # 5. DEFENSIVE FRAMING — The prompt says "You may REPHRASE but
 #    must NOT fabricate."  This gives the model permission to be
@@ -73,19 +79,30 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import re
+from typing import Type, TypeVar
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 from models.profile import Profile
 from models.tailored_profile import TailoredProfile
 
 
-# ── Initialize the Gemini client ─────────────────────────────
-# The client reads GEMINI_API_KEY from the environment.
+logger = logging.getLogger(__name__)
+
+
+# ── Initialize the MiniMax client ─────────────────────────────
+# The client reads MINIMAX_API_KEY from the environment.
 # load_dotenv() in app.py has already injected .env values into
 # os.environ by the time this module is imported.
+#
+# The MiniMax API is OpenAI-compatible, so we use the official
+# `openai` SDK with a custom base_url. Base URL is itself
+# configurable via MINIMAX_BASE_URL — defaults to MiniMax's
+# public endpoint.
 #
 # WHY A MODULE-LEVEL CLIENT?
 # Creating the client once at import time means every call to
@@ -94,39 +111,205 @@ from models.tailored_profile import TailoredProfile
 # the key around.
 # ──────────────────────────────────────────────────────────────
 
-_client: genai.Client | None = None
+_DEFAULT_BASE_URL = "https://api.minimax.io/v1"
+
+_client: OpenAI | None = None
 
 # ── Request timeout ──────────────────────────────────────────
-# Without an explicit timeout, a hung Gemini call blocks the Flask
-# request thread indefinitely — on the single-threaded dev server that
-# stalls the whole app. 90s comfortably covers normal tailoring calls
-# (which send a full profile + job description) while still failing
-# fast if the API is unreachable. Configurable via GEMINI_TIMEOUT_MS
-# for slower connections.
+# Without an explicit timeout, a hung MiniMax call blocks the
+# Flask request thread indefinitely — on the single-threaded dev
+# server that stalls the whole app. 90s comfortably covers normal
+# tailoring calls (which send a full profile + job description)
+# while still failing fast if the API is unreachable. Configurable
+# via MINIMAX_TIMEOUT_MS for slower connections.
 _DEFAULT_TIMEOUT_MS = 90_000
 
 
-def _get_client() -> genai.Client:
+def _get_client() -> OpenAI:
     """
-    Create the Gemini client lazily so .env has been loaded before
-    GEMINI_API_KEY is read.
+    Create the MiniMax (OpenAI-compatible) client lazily so .env
+    has been loaded before MINIMAX_API_KEY is read.
     """
     global _client
     if _client is None:
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("MINIMAX_API_KEY")
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
-        timeout_ms = int(os.getenv("GEMINI_TIMEOUT_MS", _DEFAULT_TIMEOUT_MS))
-        _client = genai.Client(
+            raise RuntimeError(
+                "MINIMAX_API_KEY is not set. Add it to your .env file."
+            )
+        base_url = os.getenv("MINIMAX_BASE_URL", _DEFAULT_BASE_URL)
+        timeout_ms = int(os.getenv("MINIMAX_TIMEOUT_MS", _DEFAULT_TIMEOUT_MS))
+        _client = OpenAI(
             api_key=api_key,
-            http_options=types.HttpOptions(timeout=timeout_ms),
+            base_url=base_url,
+            timeout=timeout_ms / 1000.0,
         )
     return _client
 
 # ── Model selection ──────────────────────────────────────────
-# gemini-3.5-flash supports structured output and gives better
-# rephrasing quality while staying fast enough for UI use.
-_MODEL = "gemini-3.5-flash"
+# minimax-m3 is MiniMax's current production-tier model and gives
+# strong rephrasing quality for tailoring. Override at deploy
+# time via the MINIMAX_MODEL env var (e.g. to fall back to an
+# older generation without code changes).
+_MODEL = os.getenv("MINIMAX_MODEL", "minimax-m3")
+
+
+# ── Typed chat helper ────────────────────────────────────────
+_SchemaT = TypeVar("_SchemaT")
+
+
+# Output-format rule appended to every system prompt. MiniMax's
+# minimax-m3 is a reasoning model and will sometimes emit a
+#  think ... think  chain-of-thought block (and/or wrap the JSON
+# in markdown code fences) even when response_format asks for
+# pure JSON. This hard, repeated instruction reduces — but does
+# not eliminate — that behavior. The regexes in
+# `_strip_response_wrappers` provide defense in depth.
+_OUTPUT_FORMAT_INSTRUCTION = (
+    "\n\nOUTPUT FORMAT (STRICT): Your entire reply must be a single "
+    "valid JSON object that matches the schema provided in the user "
+    "message. Do NOT include any of the following anywhere in your "
+    "response:\n"
+    "  •  think ... think  reasoning blocks (or any other chain-of-thought)\n"
+    "  • Markdown code fences such as ``` json or ```\n"
+    "  • Prose, commentary, or explanation before or after the JSON\n"
+    "  • Any text outside of the JSON object itself\n"
+    "Reply with only the JSON, starting with `{` and ending with `}`."
+)
+
+
+# Compiled patterns for stripping common wrappers. Order matters:
+# we try  think  first, then code fences, then a first-{ to last-}
+# slice. Each step is idempotent.
+_THINK_RE = re.compile(r"<!--.*?-->|```.*?```|\[.*?\]", flags=re.DOTALL)
+# Reasoning models emit `` blocks (lowercase). Some variants use
+# <thinking>...</thinking> or <reasoning>...</reasoning>.
+_THINK_BLOCK_RE = re.compile(
+    r"<\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>.*?<\s*/\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_CODE_FENCE_RE = re.compile(
+    r"^\s*```(?:json|JSON)?\s*\n?(.*?)\n?\s*```\s*$",
+    flags=re.DOTALL,
+)
+
+
+def _strip_response_wrappers(content: str) -> str:
+    """
+    Extract the JSON payload from a model response that may have
+    been wrapped in a reasoning block (``) or
+    markdown code fences (```` ``` json ... ``` ````).
+
+    Strategy (applied in order):
+      1. Strip any `` (or similar) blocks.
+      2. Strip ``` ... ``` code fences.
+      3. If the result still doesn't start with `{`, slice from
+         the first `{` to the last `}`.
+      4. Trim whitespace.
+
+    Returns the cleaned string. If no `{` is present, returns the
+    fully-stripped content as-is (the caller will fail to parse it
+    and surface the original content for debugging).
+    """
+    s = content.strip()
+    if not s:
+        return s
+    s = _THINK_BLOCK_RE.sub("", s)
+    s = _CODE_FENCE_RE.sub(r"\1", s)
+    s = s.strip()
+    if s.startswith("{"):
+        return s
+    first = s.find("{")
+    last = s.rfind("}")
+    if first != -1 and last > first:
+        return s[first : last + 1].strip()
+    return s
+
+
+def _chat_json(
+    *,
+    system: str,
+    user: str,
+    schema: Type[_SchemaT],
+    temperature: float,
+    schema_hint_name: str | None = None,
+) -> _SchemaT:
+    """
+    Call MiniMax with a system + user prompt and parse the
+    response into the given Pydantic model.
+
+    The model is instructed via `response_format={"type":
+    "json_object"}` (and a strict OUTPUT FORMAT block in the
+    system prompt) to emit a single JSON object. We then validate
+    that JSON against the supplied `schema` (Pydantic v2's
+    model_validate_json). On any shape mismatch a ValidationError
+    propagates up so the caller can surface a useful error.
+
+    Parameters
+    ----------
+    system : str
+        System prompt (anti-fabrication rules, output schema).
+    user : str
+        User payload (profile JSON, job description, etc.).
+    schema : Type[BaseModel]
+        Pydantic model class describing the expected response
+        shape. Used to validate the parsed JSON.
+    temperature : float
+        Sampling temperature. Low = more deterministic.
+    schema_hint_name : str | None
+        Optional friendly name for the response schema, only used
+        for logging/debugging today.
+
+    Returns
+    -------
+    An instance of `schema` populated with the model's output.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        If the model returned invalid JSON or JSON that does not
+        match the supplied Pydantic schema.
+    openai.OpenAIError
+        For transport / auth / rate-limit failures.
+    """
+    client = _get_client()
+    logger.debug(
+        "MiniMax chat: model=%s schema=%s temperature=%s",
+        _MODEL,
+        schema_hint_name or schema.__name__,
+        temperature,
+    )
+    response = client.chat.completions.create(
+        model=_MODEL,
+        messages=[
+            {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
+            {"role": "user", "content": user},
+        ],
+        response_format={"type": "json_object"},
+        temperature=temperature,
+    )
+    raw = (response.choices[0].message.content or "")
+    if not raw.strip():
+        raise RuntimeError("MiniMax returned empty content.")
+
+    content = _strip_response_wrappers(raw)
+
+    # First attempt: parse the cleaned content directly. Most calls
+    # land here cleanly.
+    try:
+        return schema.model_validate_json(content)
+    except Exception as first_exc:
+        # Defense in depth: if stripping didn't yield parseable
+        # JSON, surface the cleaned content in the exception so the
+        # caller can log/display it. We re-raise so app.py still
+        # treats this as a validation failure.
+        if content != raw.strip():
+            logger.warning(
+                "MiniMax response had to be unwrapped; raw[:200]=%r cleaned[:200]=%r",
+                raw[:200],
+                content[:200],
+            )
+        raise first_exc from None
 
 
 def _plain(value: str | None) -> str:
@@ -567,7 +750,7 @@ QUALITY GUIDELINES
 
 def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     """
-    Send the full profile + job description to Gemini and get back
+    Send the full profile + job description to MiniMax and get back
     a tailored resume as a validated Pydantic object.
 
     Parameters
@@ -586,24 +769,28 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     Raises
     ------
     Exception
-        If the Gemini API call fails (network error, invalid key,
-        rate limit, etc.).  The caller (app.py) should catch this
-        and return a helpful error to the frontend.
+        If the MiniMax API call fails (network error, invalid key,
+        rate limit, validation error on the response, etc.).  The
+        caller (app.py) should catch this and return a helpful
+        error to the frontend.
 
     HOW IT WORKS
     ------------
     1. Serialize the profile to a JSON string (pretty-printed for
        the model to read easily).
-    2. Construct the user message with both the profile and JD.
-    3. Call Gemini with structured output (response_schema).
-    4. Return the parsed TailoredProfile object.
+    2. Construct the user message with both the profile and JD,
+       plus the target JSON Schema so the model knows the shape.
+    3. Call MiniMax with response_format=json_object and parse
+       the response as TailoredProfile via Pydantic.
+    4. Run the anti-fabrication sanitizer against the master
+       profile.
     """
-
     # ── Step 1: Serialize the profile ─────────────────────────
     # model_dump_json() produces a clean JSON string.  We use
     # indent=2 so the model can read it easily (LLMs process
     # formatted JSON better than minified JSON).
     profile_json = profile.model_dump_json(indent=2)
+    schema_json = json.dumps(TailoredProfile.model_json_schema(), indent=2)
 
     # ── Step 2: Build the user message ────────────────────────
     user_message = (
@@ -611,40 +798,25 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
         f"{profile_json}\n\n"
         f"══ JOB DESCRIPTION ══\n"
         f"{job_description}\n\n"
+        f"══ RESPONSE SCHEMA (JSON Schema for TailoredProfile) ══\n"
+        f"{schema_json}\n\n"
         f"Now produce the tailored resume JSON."
     )
 
-    # ── Step 3: Call Gemini with structured output ────────────
-    # The key parameters:
-    #   response_mime_type="application/json"
-    #     → Tells Gemini to output JSON (not free text).
-    #
-    #   response_schema=TailoredProfile
-    #     → The SDK converts this Pydantic class to a JSON Schema
-    #       and sends it to the API.  Gemini's decoder is then
-    #       constrained to only produce tokens valid under this
-    #       schema.  This is NOT post-hoc validation — it's
-    #       built into the sampling process.
-    #
-    #   response.parsed
-    #     → The SDK automatically deserializes the JSON into a
-    #       TailoredProfile instance, fully validated by Pydantic.
-    response = _get_client().models.generate_content(
-        model=_MODEL,
-        contents=user_message,
-        config=types.GenerateContentConfig(
-            system_instruction=_SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=TailoredProfile,
-            temperature=0.3,  # Low temperature for factual accuracy
-        ),
+    # ── Step 3: Call MiniMax with JSON-object response format ─
+    tailored = _chat_json(
+        system=_SYSTEM_PROMPT,
+        user=user_message,
+        schema=TailoredProfile,
+        temperature=0.3,  # Low temperature for factual accuracy
+        schema_hint_name="TailoredProfile",
     )
 
-    # ── Step 4: Return the parsed result ──────────────────────
-    # response.parsed is already a TailoredProfile object.
-    # If parsing fails (should be impossible with constrained
-    # decoding, but defense in depth), this will raise.
-    tailored: TailoredProfile = response.parsed
+    # ── Step 4: Anti-fabrication sanitizer ────────────────────
+    # Even though the model is constrained to JSON matching the
+    # schema, content inside that JSON could still misrepresent
+    # the master profile. Run the sanitizer to drop anything
+    # that doesn't trace back to `profile`.
     _sanitize_tailored_output(profile, tailored)
 
     return tailored
@@ -652,10 +824,11 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
 
 def parse_resume_text(text: str) -> Profile:
     """
-    Send the raw resume text to Gemini and parse it into a structured Profile Pydantic object.
+    Send the raw resume text to MiniMax and parse it into a structured Profile Pydantic object.
     After parsing, list-like free-text fields (achievements, certification descriptions) are
     post-processed into semantic HTML so the rich-text editor receives properly formatted content.
     """
+    schema_json = json.dumps(TailoredProfile.model_json_schema(), indent=2)
     system_instruction = (
         "You are an expert AI resume parser. Your job is to extract all information from the provided resume text "
         "and return it structured exactly matching the schema. Extract all contact details (name, email, phone, links), "
@@ -675,18 +848,20 @@ def parse_resume_text(text: str) -> Profile:
         "Never merge multiple bullet points into one string."
     )
 
-    response = _get_client().models.generate_content(
-        model=_MODEL,
-        contents=f"══ RESUME TEXT ══\n{text}\n\nExtract and structure the resume into the response schema.",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=TailoredProfile,
-            temperature=0.1,  # Low temperature for highest extraction accuracy
-        ),
+    user_message = (
+        f"══ RESUME TEXT ══\n{text}\n\n"
+        f"══ RESPONSE SCHEMA (JSON Schema for TailoredProfile) ══\n"
+        f"{schema_json}\n\n"
+        f"Extract and structure the resume into the response schema."
     )
 
-    tailored: TailoredProfile = response.parsed
+    tailored = _chat_json(
+        system=system_instruction,
+        user=user_message,
+        schema=TailoredProfile,
+        temperature=0.1,  # Low temperature for highest extraction accuracy
+        schema_hint_name="TailoredProfile (parser)",
+    )
     profile = tailored.to_profile()
 
     # Post-process rich-text fields: convert plain-text list patterns to HTML
@@ -713,8 +888,9 @@ class JobAnalysis(BaseModel):
 
 def analyze_job_description(job_description: str) -> JobAnalysis:
     """
-    Send a job description to Gemini and parse it into structured JobAnalysis (skills and keywords).
+    Send a job description to MiniMax and parse it into structured JobAnalysis (skills and keywords).
     """
+    schema_json = json.dumps(JobAnalysis.model_json_schema(), indent=2)
     system_instruction = (
         "You are an expert AI recruiter and technical job analyst.\n\n"
         "Your task is to analyze the provided job description and extract:\n"
@@ -724,18 +900,20 @@ def analyze_job_description(job_description: str) -> JobAnalysis:
         "Do NOT invent requirements. Only extract what is explicitly mentioned or strongly, clearly implied in the job description."
     )
 
-    response = _get_client().models.generate_content(
-        model=_MODEL,
-        contents=f"══ JOB DESCRIPTION ══\n{job_description}\n\nAnalyze and extract the key skills and keywords.",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=JobAnalysis,
-            temperature=0.1,  # Low temperature for highest analytical accuracy
-        ),
+    user_message = (
+        f"══ JOB DESCRIPTION ══\n{job_description}\n\n"
+        f"══ RESPONSE SCHEMA (JSON Schema for JobAnalysis) ══\n"
+        f"{schema_json}\n\n"
+        f"Analyze and extract the key skills and keywords."
     )
 
-    return response.parsed
+    return _chat_json(
+        system=system_instruction,
+        user=user_message,
+        schema=JobAnalysis,
+        temperature=0.1,  # Low temperature for highest analytical accuracy
+        schema_hint_name="JobAnalysis",
+    )
 
 
 # ── Tailor Resume Workspace Helpers ───────────────────────────
@@ -836,21 +1014,18 @@ REQUIRED OUTPUT SCHEMA (TailoringResult):
         f"{profile_json}\n\n"
         f"══ JOB DESCRIPTION ══\n"
         f"{job_description}\n\n"
+        f"══ RESPONSE SCHEMA (JSON Schema for TailoringResult) ══\n"
+        f"{json.dumps(TailoringResult.model_json_schema(), indent=2)}\n\n"
         f"Now produce the tailored resume JSON structured exactly as TailoringResult."
     )
 
-    response = _get_client().models.generate_content(
-        model=_MODEL,
-        contents=user_message,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=TailoringResult,
-            temperature=0.2,
-        ),
+    result = _chat_json(
+        system=system_instruction,
+        user=user_message,
+        schema=TailoringResult,
+        temperature=0.2,
+        schema_hint_name="TailoringResult (initial v2)",
     )
-
-    result: TailoringResult = response.parsed
     _sanitize_tailored_output(profile, result.profile)
     return result
 
@@ -933,21 +1108,19 @@ REQUIRED OUTPUT SCHEMA (TailoringResult):
 ══ NEW USER REFINEMENT REQUEST ══
 {message}
 
+══ RESPONSE SCHEMA (JSON Schema for TailoringResult) ══
+{json.dumps(TailoringResult.model_json_schema(), indent=2)}
+
 Please modify the CURRENT TAILORED RESUME DRAFT to satisfy the request. Ensure all updates remain 100% truthful to the ORIGINAL MASTER RESUME facts.
 """
 
-    response = _get_client().models.generate_content(
-        model=_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=TailoringResult,
-            temperature=0.2,
-        ),
+    result = _chat_json(
+        system=system_instruction,
+        user=contents,
+        schema=TailoringResult,
+        temperature=0.2,
+        schema_hint_name="TailoringResult (chat refine)",
     )
-
-    result: TailoringResult = response.parsed
     _sanitize_tailored_output(master_profile, result.profile)
     return result
 

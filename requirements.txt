@@ -8,7 +8,8 @@
 #   pydantic       – Data-validation & settings management via Python type hints.
 #                    We'll use it to define Resume / Experience / Education models.
 #   python-dotenv  – Reads .env files so secrets (API keys) stay out of code.
-#   google-genai   – Official Google Generative AI SDK for calling the Gemini API.
+#   openai         – Official OpenAI Python SDK. We use its chat.completions
+#                    endpoint against MiniMax's OpenAI-compatible base URL.
 #   jinja2         – Templating engine (Flask bundles it, but we also use it
 #                    stand-alone to render LaTeX templates).
 #   requests       – HTTP client for fetching external resources (job postings, etc.).
@@ -18,7 +19,7 @@
 flask>=3.1,<4
 pydantic>=2.13,<3
 python-dotenv>=1.2,<2
-google-genai>=2.12,<3
+openai>=1.50,<3
 jinja2>=3.1,<4
 requests>=2.34,<3
 beautifulsoup4>=4.15,<5

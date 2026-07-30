@@ -4,6 +4,8 @@ anti-hallucination guard that runs on every Gemini tailoring response
 before it reaches the user. Only exercises the sanitizer function itself;
 no network calls / API key needed.
 """
+import json
+
 from models.profile import (
     Profile, PersonalInfo, Experience, Project, Skills, Certification,
 )
@@ -11,7 +13,12 @@ from models.tailored_profile import (
     TailoredProfile, TailoredPersonalInfo, TailoredLink,
     TailoredExperience, TailoredProject, TailoredSkills, TailoredSkillCategory,
 )
-from services.ai_service import _sanitize_tailored_output, _canon_skill, _skills_equivalent
+from services.ai_service import (
+    _sanitize_tailored_output,
+    _canon_skill,
+    _skills_equivalent,
+    _strip_response_wrappers,
+)
 
 
 def make_original_profile(**overrides):
@@ -184,3 +191,67 @@ class TestAchievementsHtmlRestoration:
         tailored = make_tailored_from(profile, achievements="Item one and item two combined into one sentence")
         _sanitize_tailored_output(profile, tailored)
         assert tailored.achievements == profile.achievements
+
+
+class TestStripResponseWrappers:
+    """
+    Defense-in-depth tests for _strip_response_wrappers().
+
+    minimax-m3 is a reasoning model and sometimes emits  think ... think
+    blocks or markdown code fences even when asked for json_object
+    output. The wrapper-stripping helper must extract the JSON object
+    so Pydantic validation can run.
+    """
+
+    # Build marker constants via concatenation so the test source itself
+    # doesn't get any surrounding tooling that might strip  think tags.
+    _THINK_OPEN = "<" + "think" + ">"
+    _THINK_CLOSE = "<" + "/" + "think" + ">"
+    _FENCE = "```"
+
+    def test_passes_clean_json_through_unchanged(self):
+        original = '{"name":"Ada","experience":[]}'
+        assert _strip_response_wrappers(original) == original
+
+    def test_strips_markdown_code_fences(self):
+        wrapped = self._FENCE + "json\n{\"name\":\"Ada\"}\n" + self._FENCE
+        cleaned = _strip_response_wrappers(wrapped)
+        assert json.loads(cleaned) == {"name": "Ada"}
+
+    def test_strips_think_block_followed_by_json(self):
+        wrapped = (
+            self._THINK_OPEN
+            + "\nLet me carefully extract the fields...\n"
+            + self._THINK_CLOSE
+            + "\n{\"name\":\"Ada\",\"experience\":[]}"
+        )
+        cleaned = _strip_response_wrappers(wrapped)
+        assert json.loads(cleaned) == {"name": "Ada", "experience": []}
+
+    def test_strips_think_block_followed_by_code_fence(self):
+        wrapped = (
+            self._THINK_OPEN
+            + "\nreasoning text\n"
+            + self._THINK_CLOSE
+            + "\n"
+            + self._FENCE
+            + "json\n{\"name\":\"Ada\"}\n"
+            + self._FENCE
+        )
+        cleaned = _strip_response_wrappers(wrapped)
+        assert json.loads(cleaned) == {"name": "Ada"}
+
+    def test_extracts_json_from_surrounding_prose(self):
+        wrapped = 'Here you go:\n{"name":"Ada"}\nThanks!'
+        cleaned = _strip_response_wrappers(wrapped)
+        assert json.loads(cleaned) == {"name": "Ada"}
+
+    def test_handles_unrecoverable_input_gracefully(self):
+        # No JSON, no closing think tag — must not raise, just return
+        # the input unchanged so the caller surfaces the original error.
+        wrapped = self._THINK_OPEN + "\njust thinking, no JSON"
+        assert _strip_response_wrappers(wrapped) == wrapped
+
+    def test_handles_empty_input(self):
+        assert _strip_response_wrappers("") == ""
+        assert _strip_response_wrappers("   \n  ") == "   \n  ".strip()
