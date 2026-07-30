@@ -235,12 +235,32 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
         raise PdfCompilationError(_NOT_FOUND_MSG, log="")
 
     try:
+        # ── Build subprocess env ────────────────────────────────
+        # Repoint Tectonic's package cache to <project_root>/.tectonic/
+        # cache/ ONLY when that directory has been pre-populated by
+        # render-build.sh. The default cache (Tectonic's
+        # $HOME/.cache/Tectonic) is fine on dev machines — overriding
+        # it there would force a cold package download on every run
+        # even when the user's real cache is already warm.
+        #
+        # On Render, render-build.sh creates .tectonic/cache/ and
+        # populates it via a smoke compile, so the override takes
+        # effect and the runtime image already has every package
+        # Tectonic needs.
+        project_root = Path(__file__).resolve().parent.parent
+        cache_dir = project_root / ".tectonic" / "cache"
+        sub_env = os.environ.copy()
+        if cache_dir.is_dir() and any(cache_dir.iterdir()):
+            sub_env["TECTONIC_CACHE_DIR"] = str(cache_dir)
+            logger.debug("Tectonic using project cache: %s", cache_dir)
+
         result = subprocess.run(
             [tectonic_bin, _TEX_FILENAME],
             cwd=str(output_dir),
+            env=sub_env,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
     except FileNotFoundError:
         # Tectonic binary is not on PATH
@@ -256,9 +276,12 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
         )
     except subprocess.TimeoutExpired:
         raise PdfCompilationError(
-            "Tectonic timed out after 120 seconds. "
-            "This can happen on the first run when it downloads "
-            "LaTeX packages.  Try again — subsequent runs use the cache.",
+            "Tectonic timed out after 180 seconds. "
+            "This usually means the package cache is empty and "
+            "Tectonic is downloading LaTeX packages over a slow "
+            "network. On Render, ensure render-build.sh ran the "
+            "pre-warm step successfully. Locally, try "
+            "'tectonic --version' once to populate the cache.",
             log="",
         )
 
