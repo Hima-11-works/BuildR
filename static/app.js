@@ -1904,8 +1904,8 @@ document.addEventListener("DOMContentLoaded", () => {
     bootstrapAuth().then((authenticated) => {
         if (!authenticated) {
             // The overlay is already visible (no [hidden] attr).
-            // Load Google Identity Services so the user can sign in.
-            loadGoogleIdentityServices();
+            // Wire up the form so the user can submit an email.
+            wireSignInForm();
             return;
         }
         startSignedInApp();
@@ -3720,117 +3720,108 @@ async function bootstrapAuth() {
 
 
 function wireSignInForm() {
-    // Kept as a no-op for backward-compat with any caller that still
-    // references it. The actual sign-in UI is now Google Identity Services,
-    // loaded by loadGoogleIdentityServices() below.
-}
+    const form = document.getElementById("auth-form");
+    if (!form || form.dataset.wired) return;
+    form.dataset.wired = "1";
 
-
-// ── Google Identity Services integration ───────────────────────
-// Loads accounts.google.com/gsi/client on demand, renders the standard
-// "Sign in with Google" button into the auth overlay, and forwards the
-// resulting JWT to /api/auth/google for server-side verification.
-
-const GIS_SRC = "https://accounts.google.com/gsi/client";
-let _gisLoading = null;
-
-function loadGoogleIdentityServices() {
-    const slot = document.getElementById("google-signin-button");
-    if (!slot) return;
-
-    const clientId = (document.querySelector('meta[name="google-client-id"]') || {}).content || "";
-    if (!clientId) {
-        showAuthError(
-            "Server is not configured with GOOGLE_CLIENT_ID. " +
-            "Set it in your environment (see .env.example)."
-        );
-        slot.hidden = true;
-        return;
-    }
-
-    // Lazy-load the GIS script. Re-use the promise if already in flight.
-    if (!_gisLoading) {
-        _gisLoading = new Promise((resolve, reject) => {
-            const existing = document.querySelector(`script[src="${GIS_SRC}"]`);
-            if (existing) {
-                if (window.google && window.google.accounts) resolve();
-                else existing.addEventListener("load", () => resolve());
-                return;
-            }
-            const script = document.createElement("script");
-            script.src = GIS_SRC;
-            script.async = true;
-            script.defer = true;
-            script.addEventListener("load", () => resolve());
-            script.addEventListener("error", () => reject(new Error("Failed to load Google Identity Services.")));
-            document.head.appendChild(script);
-        });
-    }
-
-    _gisLoading
-        .then(() => {
-            if (!window.google || !window.google.accounts) {
-                throw new Error("Google Identity Services unavailable.");
-            }
-            window.google.accounts.id.initialize({
-                client_id: clientId,
-                callback: handleGoogleCredentialResponse,
-                auto_select: false,
-                cancel_on_tap_outside: true,
-            });
-            window.google.accounts.id.renderButton(
-                slot,
-                { theme: "outline", size: "large", text: "signin_with", shape: "rectangular", width: 320 }
-            );
-        })
-        .catch((err) => {
-            console.error(err);
-            showAuthError(err.message || "Could not load Google sign-in.");
-        });
-}
-
-
-async function handleGoogleCredentialResponse(response) {
+    const emailInput = document.getElementById("auth-email");
+    const passwordInput = document.getElementById("auth-password");
+    const submitBtn = document.getElementById("auth-submit-btn");
+    const submitLabel = document.getElementById("auth-submit-label");
     const errorEl = document.getElementById("auth-error");
+    const titleEl = document.getElementById("auth-title");
+    const subtitleEl = document.getElementById("auth-subtitle");
+    const tabSignin = document.getElementById("auth-tab-signin");
+    const tabSignup = document.getElementById("auth-tab-signup");
+
+    // Mode state: "signin" or "signup". Default is signin.
+    let mode = "signin";
+    const applyMode = () => {
+        if (mode === "signup") {
+            tabSignup.classList.add("active");
+            tabSignup.setAttribute("aria-selected", "true");
+            tabSignin.classList.remove("active");
+            tabSignin.setAttribute("aria-selected", "false");
+            submitLabel.textContent = "Create account";
+            titleEl.textContent = "Create your BuildR account";
+            subtitleEl.textContent = "Pick an email and a password. Each account gets its own private resume workspace.";
+            passwordInput.setAttribute("autocomplete", "new-password");
+        } else {
+            tabSignin.classList.add("active");
+            tabSignin.setAttribute("aria-selected", "true");
+            tabSignup.classList.remove("active");
+            tabSignup.setAttribute("aria-selected", "false");
+            submitLabel.textContent = "Sign in";
+            titleEl.textContent = "Sign in to BuildR";
+            subtitleEl.textContent = "Enter your email and password to access your resumes. Each account keeps its own private workspace.";
+            passwordInput.setAttribute("autocomplete", "current-password");
+        }
+    };
+    applyMode();
+
+    tabSignin.addEventListener("click", () => { mode = "signin"; applyMode(); clearAuthError(); });
+    tabSignup.addEventListener("click", () => { mode = "signup"; applyMode(); clearAuthError(); });
+
+    function clearAuthError() {
+        if (errorEl) {
+            errorEl.textContent = "";
+            errorEl.hidden = true;
+        }
+    }
+
     function showAuthError(msg) {
         if (!errorEl) return;
         errorEl.textContent = msg;
         errorEl.hidden = false;
     }
 
-    if (!response || !response.credential) {
-        showAuthError("Google sign-in did not return a credential.");
-        return;
-    }
-
-    try {
-        const resp = await fetch("/api/auth/google", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_token: response.credential }),
-        });
-        if (!resp.ok) {
-            const body = await resp.json().catch(() => ({}));
-            showAuthError(body.error || "Sign-in failed.");
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        clearAuthError();
+        const email = (emailInput.value || "").trim();
+        const password = passwordInput.value || "";
+        if (!email) {
+            showAuthError("Please enter your email address.");
             return;
         }
-        // Success — wipe in-memory + browser state for the previous
-        // user, then reload. The reload is what guarantees a clean
-        // module-scope state for the newly-signed-in user.
-        try { sessionStorage.clear(); } catch (e) { console.warn(e); }
-        window.location.reload();
-    } catch (err) {
-        showAuthError(err.message || "Network error.");
-    }
-}
-
-
-function showAuthError(msg) {
-    const errorEl = document.getElementById("auth-error");
-    if (!errorEl) return;
-    errorEl.textContent = msg;
-    errorEl.hidden = false;
+        if (!password || password.length < 8) {
+            showAuthError("Password must be at least 8 characters.");
+            return;
+        }
+        submitBtn.disabled = true;
+        const originalLabel = submitLabel.textContent;
+        submitLabel.textContent = mode === "signup" ? "Creating account..." : "Signing in...";
+        try {
+            const url = mode === "signup" ? "/api/auth/sign-up" : "/api/auth/sign-in";
+            const resp = await fetch(url, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => ({}));
+                showAuthError(body.error || "Authentication failed.");
+                return;
+            }
+            // Success — clear any in-memory state from a previous user,
+            // then reload. The reload is what guarantees the SPA shell
+            // is re-evaluated from a clean module scope; everything
+            // that lives in module-scope variables (cachedProfile,
+            // workspaceSessionId, editorInstances, etc.) is reset.
+            try {
+                sessionStorage.clear();
+            } catch (e) {
+                console.warn("sessionStorage.clear() failed:", e);
+            }
+            window.location.reload();
+        } catch (err) {
+            showAuthError(err.message || "Network error.");
+        } finally {
+            submitBtn.disabled = false;
+            submitLabel.textContent = originalLabel;
+        }
+    });
 }
 
 

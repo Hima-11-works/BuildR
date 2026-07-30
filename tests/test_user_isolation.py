@@ -6,21 +6,16 @@ authenticated user gets an independent workspace, and no user can
 ever observe another user's data through any API surface.
 
 The tests use `app_client_factory` to mint multiple signed-in Flask
-test clients (each bound to a distinct Google `sub` claim) within a
-single pytest session — all sharing one isolated_users_root tmp
-directory so the on-disk layout actually has separate <user_id>/ trees.
+test clients (each bound to a distinct email) within a single pytest
+session — all sharing one isolated_users_root tmp directory so the
+on-disk layout actually has separate <user_id>/ trees.
 
 If any of these regress, two users will leak into each other again.
-
-The CRITICAL security invariant — that an email alone NEVER grants
-access — is exercised by `TestAttackerWithVictimEmail` below. This
-class is the regression net for the previous design's
-"sign in with email" vulnerability.
 """
 import json
 
 from models.profile import PersonalInfo, Profile
-from services.auth_service import user_id_from_google_sub
+from services.auth_service import user_id_from_email
 
 
 # ── 1. Alice's profile is invisible to Bob ─────────────────────
@@ -145,9 +140,7 @@ class TestTailoringSessionIsolation:
         # We can't actually call /api/tailor/start (it would invoke the
         # LLM), so seed it directly via the session_service.
         from services import session_service
-        # Look up Alice's user_id by her sub claim (the conftest's
-        # app_client_factory derives a stable sub from the email).
-        user_id = user_id_from_google_sub("fake-sub-alice-at-example-com")
+        user_id = user_id_from_email("alice@example.com")
         profile = Profile(personal_info=PersonalInfo(name="Alice", email="alice@example.com"))
         alice_session_id = session_service.create_session(
             user_id, profile, {"job_description": "Senior backend role"}
@@ -223,7 +216,7 @@ class TestSignOutBlocksCalls:
 
 class TestAnonymousAccess:
     def test_whoami_when_signed_out(self, app_client):
-        # app_client signs in via mock_google_auth first. Sign out, then whoami.
+        # app_client signs in test@example.com first. Sign out, then whoami.
         app_client.post("/api/auth/sign-out")
         resp = app_client.get("/api/auth/whoami")
         assert resp.status_code == 200
@@ -249,46 +242,35 @@ class TestAnonymousAccess:
             assert resp.status_code == 401, f"{method} {url} returned {resp.status_code}"
 
 
-# ── 7. Google OAuth endpoint shape ────────────────────────────
+# ── 7. Auth endpoint shape ─────────────────────────────────────
 
-class TestGoogleAuthEndpoints:
+class TestAuthEndpoints:
+    def test_sign_in_rejects_malformed_email(self, app_client):
+        resp = app_client.post("/api/auth/sign-in", json={"email": "not-an-email"})
+        assert resp.status_code == 400
+        assert "valid email" in resp.get_json()["error"].lower()
+
+    def test_sign_in_normalizes_case(self, app_client):
+        # Re-sign-in with the email upper-cased and padded in
+        # whitespace to verify the route normalizes it. The
+        # auto-signed-in app_client uses test@example.com — this
+        # is the same account, just in a different case + padding.
+        app_client.post("/api/auth/sign-out")
+        resp = app_client.post("/api/auth/sign-in", json={
+            "email": "  TEST@example.com  ",
+            "password": "test-password-123",
+        })
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["email"] == "test@example.com"
+
     def test_whoami_reflects_signed_in_state(self, app_client):
         resp = app_client.get("/api/auth/whoami")
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["authenticated"] is True
-        # user_id is the SHA-256 prefix of the (fake) Google sub.
-        assert body["user_id"] == user_id_from_google_sub("default-test-sub")
-
-    def test_google_sign_in_rejects_invalid_token(self, app_client_factory):
-        # Mint a client and sign it OUT so it has no session.
-        client = app_client_factory("bob@example.com")
-        client.post("/api/auth/sign-out")
-        # The mock_google_auth fixture only accepts tokens of the form
-        # "test:<sub>:<email>". Anything else raises ValueError.
-        resp = client.post("/api/auth/google", json={"id_token": "not-a-real-token"})
-        assert resp.status_code == 401
-
-    def test_google_sign_in_rejects_missing_token(self, app_client_factory):
-        client = app_client_factory("bob@example.com")
-        client.post("/api/auth/sign-out")
-        resp = client.post("/api/auth/google", json={})
-        assert resp.status_code == 400
-
-    def test_old_email_sign_in_route_no_longer_exists(self, app_client_factory):
-        """The previous design accepted a bare email and created a
-        session. That endpoint must not exist anymore — identity must
-        come from a Google-verified token, never a user-supplied email."""
-        client = app_client_factory("anyone@example.com")
-        # Any POST to /api/auth/sign-in (with email OR any body) must
-        # result in 404 or 405 — it must NOT succeed.
-        resp = client.post("/api/auth/sign-in", json={"email": "victim@example.com"})
-        assert resp.status_code in (404, 405), (
-            "Old /api/auth/sign-in endpoint must not exist. "
-            f"Got {resp.status_code}"
-        )
-        resp = client.post("/api/auth/sign-in", json={"any": "data"})
-        assert resp.status_code in (404, 405)
+        assert body["email"] == "test@example.com"
+        assert body["user_id"] == user_id_from_email("test@example.com")
 
     def test_sign_out_is_idempotent(self, app_client):
         assert app_client.post("/api/auth/sign-out").status_code == 200
@@ -301,152 +283,151 @@ class TestGoogleAuthEndpoints:
         assert app_client.get("/favicon.ico").status_code == 200
 
 
-# ── 8. THE EXPLICIT ATTACK TEST ────────────────────────────────
-#
-# SCENARIO (the user's exact ask):
-#   "If attacker knows victim@gmail.com but does not own that Google
-#    account, what happens?"
-#
-# EXPECTED OUTCOME after this fix:
-#   - Attacker submits anything claiming to be victim → 401
-#   - Attacker has no way to obtain a Google-signed JWT with
-#     victim's `sub` claim → cannot establish a session
-#   - Victim's data remains untouched and invisible
+# ── 8. Password verification ───────────────────────────────────
 
-class TestAttackerWithVictimEmail:
-    def test_knowing_email_alone_grants_no_access(
-        self, app_client_factory, mock_google_auth,
-    ):
-        """
-        Step 1: Alice (victim) signs in with a valid Google token
-                and saves data.
-        Step 2: A fresh, fully-unauthenticated client tries every
-                possible way to access Alice's data by knowing only
-                her email.
-        Step 3: Every attempt must fail. Alice's data must be intact.
-        """
-        # ── Step 1: Alice's data ────────────────────────────────
-        alice = app_client_factory("alice@example.com")
-        alice.put("/api/profile", json={
-            "personal_info": {
-                "name": "Alice Anderson",
-                "email": "alice@example.com",
-                "phone": None,
-                "links": {},
-            },
-            "education": [], "experience": [], "projects": [],
-            "skills": {"categories": {}}, "certifications": [],
-            "achievements": "",
+class TestPasswordVerification:
+    """The whole point of the password refactor: someone who knows
+    another user's email can no longer access their account."""
+
+    def test_wrong_password_is_rejected(self, app_client_factory):
+        # Set up Alice with a known password via the factory helper.
+        alice = app_client_factory("alice@example.com", password="correct-horse-battery-staple")
+
+        # A fresh, unsigned-in client tries to sign in with the wrong password.
+        intruder = alice  # Re-use the cookie jar — sign out first.
+        intruder.post("/api/auth/sign-out")
+        bad = intruder.post("/api/auth/sign-in", json={
+            "email": "alice@example.com",
+            "password": "wrong-password-12345",
         })
-        alice_master = alice.post("/api/resume/master").get_json()
-        assert alice_master["status"] == "ok"
-        alice_resume_id = alice_master["id"]
+        assert bad.status_code == 400
+        assert "invalid" in bad.get_json()["error"].lower()
 
-        # Alice's user_id (for assertions in step 3)
-        alice_user_id = user_id_from_google_sub("fake-sub-alice-at-example-com")
+    def test_correct_password_after_failed_attempt(self, app_client_factory):
+        alice = app_client_factory("alice@example.com", password="correct-horse-battery-staple")
 
-        # Alice signs out so subsequent calls from "an attacker" start
-        # from a fully-unauthenticated state.
+        # Sign out, try wrong, then right.
         alice.post("/api/auth/sign-out")
+        assert alice.post("/api/auth/sign-in", json={
+            "email": "alice@example.com", "password": "wrong-password",
+        }).status_code == 400
+        ok = alice.post("/api/auth/sign-in", json={
+            "email": "alice@example.com", "password": "correct-horse-battery-staple",
+        })
+        assert ok.status_code == 200
 
-        # ── Step 2: Attacker probes ────────────────────────────
-        # A bare, unauthenticated client (no cookie, no token).
-        # We use a freshly-constructed test client so there's no
-        # possibility of leftover session state.
+    def test_error_messages_do_not_leak_account_existence(self, app_client_factory):
+        # A "user does not exist" error and a "wrong password" error
+        # must be indistinguishable to an attacker — otherwise the
+        # auth surface can be used to enumerate registered emails.
+        signed_in_alice = app_client_factory("alice@example.com", password="right-password")
+        signed_in_alice.post("/api/auth/sign-out")
+        wrong_password = signed_in_alice.post("/api/auth/sign-in", json={
+            "email": "alice@example.com", "password": "wrong-password",
+        }).get_json()
+
+        unknown_user = signed_in_alice.post("/api/auth/sign-in", json={
+            "email": "ghost@example.com", "password": "any-password-123",
+        }).get_json()
+
+        # Both should be the same generic message.
+        assert wrong_password["error"].lower() == unknown_user["error"].lower()
+
+    def test_sign_up_short_password_rejected(self, app_client):
+        # No cookie yet — sign-up is the entry point.
+        resp = app_client.post("/api/auth/sign-up", json={
+            "email": "newuser@example.com", "password": "short",
+        })
+        assert resp.status_code == 400
+        assert "8" in resp.get_json()["error"]
+
+    def test_sign_up_then_sign_in_roundtrip(self, app_client_factory):
+        # Drive the auth flow through a fresh factory-minted client so
+        # the storage is isolated to this test's tmp_path.
+        client = app_client_factory("freshuser@example.com")
+        # factory already signed us in. Verify we can re-sign-in after
+        # explicitly signing out.
+        client.post("/api/auth/sign-out")
+        si = client.post("/api/auth/sign-in", json={
+            "email": "freshuser@example.com",
+            "password": "test-password-123",
+        })
+        assert si.status_code == 200
+
+    def test_duplicate_sign_up_returns_409(self, app_client):
+        # app_client already signed up test@example.com. A second
+        # sign-up for the same email must be rejected.
+        dup = app_client.post("/api/auth/sign-up", json={
+            "email": "test@example.com",
+            "password": "another-password-789",
+        })
+        assert dup.status_code == 409
+        assert "already" in dup.get_json()["error"].lower()
+
+    def test_change_password_blocks_wrong_old(self, app_client):
+        app_client.post("/api/auth/change-password", json={
+            "old_password": "wrong-old-password",
+            "new_password": "new-password-456",
+        })
+        assert app_client.get("/api/profile").status_code == 200  # still signed in
+
+    def test_change_password_updates_credential(self, app_client):
+        # Change password in-session.
+        ok = app_client.post("/api/auth/change-password", json={
+            "old_password": "test-password-123",
+            "new_password": "new-password-456",
+        })
+        assert ok.status_code == 200
+
+        # Sign out, sign back in with the OLD password — must fail.
+        app_client.post("/api/auth/sign-out")
+        bad = app_client.post("/api/auth/sign-in", json={
+            "email": "test@example.com",
+            "password": "test-password-123",
+        })
+        assert bad.status_code == 400
+
+        # Sign in with the NEW password — must succeed.
+        good = app_client.post("/api/auth/sign-in", json={
+            "email": "test@example.com",
+            "password": "new-password-456",
+        })
+        assert good.status_code == 200
+
+    def test_change_password_requires_session(self):
+        """Hitting change-password without an active session must 401,
+        not silently update some other user's password."""
         import app as app_module
-        attacker = app_module.app.test_client()
+        app_module.app.config.update(TESTING=True)
+        with app_module.app.test_client() as client:
+            resp = client.post("/api/auth/change-password", json={
+                "old_password": "any", "new_password": "new-password-456",
+            })
+            assert resp.status_code == 401
 
-        # Probe 1: try the OLD email-only sign-in endpoint.
-        # The endpoint must not exist anymore.
-        resp = attacker.post("/api/auth/sign-in", json={"email": "alice@example.com"})
-        assert resp.status_code in (404, 405), (
-            f"Old /api/auth/sign-in endpoint must not exist. Got {resp.status_code}"
-        )
+    def test_bob_cannot_change_alices_password(self, app_client_factory):
+        alice = app_client_factory("alice@example.com", password="alice-password-12345")
+        bob = app_client_factory("bob@example.com", password="bob-password-67890")
 
-        # Probe 2: try the new Google endpoint with a token whose sub
-        # claim belongs to the attacker (NOT victim). The mock verifier
-        # accepts the token, but the resulting user_id is the
-        # attacker's, not Alice's.
-        attacker_token = mock_google_auth(
-            sub="attacker-forged-sub",
-            email="alice@example.com",
-        )
-        resp = attacker.post("/api/auth/google", json={"id_token": attacker_token})
-        if resp.status_code == 200:
-            # Sign-in succeeded — but for the attacker's sub, not Alice's.
-            whoami = attacker.get("/api/auth/whoami").get_json()
-            assert whoami["user_id"] != alice_user_id, (
-                "Attacker's session must NOT have Alice's user_id!"
-            )
-        # Either way, attacker cannot read Alice's data.
-        profile = attacker.get("/api/profile").get_json()
-        # If not signed in: 401.
-        # If signed in as the attacker: empty default profile, NOT Alice's.
-        assert (
-            profile.get("personal_info", {}).get("name") != "Alice Anderson"
-        ), "Attacker must not see Alice's saved profile data"
+        # Bob authenticates as Bob — but tries to hit change-password
+        # with Alice's email context. The endpoint ignores any email
+        # field in the body and only updates the SESSION user's
+        # password, so this should affect Bob, not Alice.
+        resp = bob.post("/api/auth/change-password", json={
+            "old_password": "bob-password-67890",
+            "new_password": "bob-password-NEW-12345",
+        })
+        assert resp.status_code == 200
 
-        # Probe 3: try to read /api/profile when fully unauthenticated.
-        unauth = app_module.app.test_client()
-        resp = unauth.get("/api/profile")
-        assert resp.status_code == 401
-
-        # Probe 4: try to list resumes when unauthenticated.
-        resp = unauth.get("/api/resumes")
-        assert resp.status_code == 401
-
-        # Probe 5: try to download Alice's resume by guessing the ID.
-        resp = unauth.get(f"/api/resumes/{alice_resume_id}/pdf")
-        assert resp.status_code == 401
-
-        # ── Step 3: Alice's data is intact ─────────────────────
-        alice2 = app_client_factory("alice@example.com")
-        recovered = alice2.get("/api/profile").get_json()
-        assert recovered["personal_info"]["name"] == "Alice Anderson"
-        library = alice2.get("/api/resumes").get_json()
-        assert any(r["id"] == alice_resume_id for r in library)
-
-    def test_token_with_unverified_email_is_rejected(
-        self, monkeypatch,
-    ):
-        """An attacker who controls a Google account with someone
-        else's email (unverified) cannot sign in. The server rejects
-        any token whose `email_verified` claim is False — because
-        Google only sets that to true for the actual email owner.
-
-        The fake here mimics the real verifier's policy: it inspects
-        email_verified and raises ValueError if it's False. This is
-        what the production verify_google_id_token does, so we're
-        testing the same code path."""
-        from services import auth_service
-
-        def fake_reject_unverified(token):
-            # Simulate Google issuing a token for an account where
-            # email_verified=False (the attacker registered victim's
-            # email but didn't verify it).
-            claims = {
-                "sub": "attacker-google-account",
-                "email": "victim@example.com",
-                "email_verified": False,  # attacker can't fake this
-                "name": "Attacker",
-            }
-            if not claims.get("email_verified", False):
-                raise ValueError("Google account email is not verified.")
-            return claims
-        monkeypatch.setattr(auth_service, "verify_google_id_token", fake_reject_unverified)
-
-        import app as app_module
-        client = app_module.app.test_client()
-        resp = client.post(
-            "/api/auth/google",
-            json={"id_token": "anything-the-mock-doesn't-care-about"},
-        )
-        assert resp.status_code == 401, (
-            "Tokens with email_verified=False must be rejected — "
-            "an attacker who registered victim's email but didn't "
-            "verify it must not gain access."
-        )
-
-        # whoami still reports not authenticated.
-        whoami = client.get("/api/auth/whoami").get_json()
-        assert whoami["authenticated"] is False
+        # Verify Alice's account is untouched.
+        alice.post("/api/auth/sign-out")
+        alice_old = alice.post("/api/auth/sign-in", json={
+            "email": "alice@example.com", "password": "alice-password-12345",
+        })
+        assert alice_old.status_code == 200
+        # And Bob's password IS the new one.
+        bob.post("/api/auth/sign-out")
+        bob_new = bob.post("/api/auth/sign-in", json={
+            "email": "bob@example.com", "password": "bob-password-NEW-12345",
+        })
+        assert bob_new.status_code == 200

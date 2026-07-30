@@ -2191,6 +2191,37 @@ body.builder-active .save-bar {
     margin: 0;
 }
 
+/* Tab bar that switches between Sign in and Sign up modes. */
+.auth-tabs {
+    display: flex;
+    gap: var(--space-xs);
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: var(--space-xs);
+}
+
+.auth-tab {
+    flex: 1;
+    padding: var(--space-sm) var(--space-md);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.auth-tab:hover {
+    color: var(--text-primary);
+}
+
+.auth-tab.active {
+    color: var(--accent-solid);
+    border-bottom-color: var(--accent-solid);
+}
+
 .auth-subtitle {
     color: var(--text-secondary);
     font-size: 0.95rem;

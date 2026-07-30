@@ -874,40 +874,39 @@
         </div>
     </div>
 
-    <!-- ── Sign-in Overlay (visible until /api/auth/whoami returns authenticated) -->
+    <!-- ── Sign-in / Sign-up Overlay (visible until /api/auth/whoami returns authenticated) -->
     <div id="auth-overlay" class="auth-overlay">
         <div class="auth-card">
-            <h2 class="auth-title">Sign in to BuildR</h2>
-            <p class="auth-subtitle">
-                Sign in with your Google account. Each Google account gets its own
-                private workspace — your data is identified by Google's verified
-                <code>sub</code> claim, not by an email you type.
-            </p>
+            <div class="auth-tabs" role="tablist">
+                <button type="button" id="auth-tab-signin" class="auth-tab active" role="tab" aria-selected="true">Sign in</button>
+                <button type="button" id="auth-tab-signup" class="auth-tab" role="tab" aria-selected="false">Sign up</button>
+            </div>
 
-            <!--
-                Google Identity Services (GIS).
-                The script is loaded from accounts.google.com on page load.
-                The button below is rendered by GIS into #google-signin-button.
-                The callback posts the JWT to /api/auth/google.
-                GOOGLE_CLIENT_ID is injected into the GIS data attribute by
-                app.js (which reads it from a meta tag below).
-            -->
-            <div id="google-signin-button" class="auth-google-slot"></div>
+            <h2 id="auth-title" class="auth-title">Sign in to BuildR</h2>
+            <p id="auth-subtitle" class="auth-subtitle">Enter your email and password to access your resumes. Each account keeps its own private workspace.</p>
 
-            <p id="auth-error" class="auth-error" hidden></p>
+            <form id="auth-form" class="auth-form" autocomplete="on">
+                <label class="auth-field">
+                    <span class="auth-label">Email address</span>
+                    <input id="auth-email" type="email" class="auth-input" name="email" placeholder="you@example.com" required autocomplete="email">
+                </label>
+                <label class="auth-field">
+                    <span class="auth-label">Password</span>
+                    <input id="auth-password" type="password" class="auth-input" name="password" placeholder="At least 8 characters" required minlength="8" autocomplete="current-password">
+                </label>
+                <button id="auth-submit-btn" type="submit" class="auth-submit">
+                    <span id="auth-submit-label">Sign in</span>
+                </button>
+                <p id="auth-error" class="auth-error" hidden></p>
+            </form>
 
             <p class="auth-footnote">
-                Authentication is performed by Google. We verify Google's signed
-                ID token on the server; identity comes from the verified
-                <code>sub</code> claim, never from a user-entered email.
+                Each email address is its own private account. Your password is
+                hashed (scrypt) and stored only on this server — we never see the
+                plaintext after sign-up.
             </p>
         </div>
     </div>
-
-    <!-- The OAuth Client ID is sent to the browser this way (not hardcoded)
-         so the same index.html works for any deployment. The server reads
-         the same GOOGLE_CLIENT_ID env var when verifying ID tokens. -->
-    <meta name="google-client-id" content="">
 
     <!-- ── Toast Notification Container ────────────────────────── -->
     <div id="toast-container" class="toast-container"></div>
