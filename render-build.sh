@@ -9,9 +9,10 @@
 # inside the project directory during the build phase. We:
 #
 #   1. Install Python dependencies from requirements.txt
-#   2. Download a pinned Tectonic LaTeX compiler and install
-#      it into the project tree at .tectonic/tectonic so the
-#      runtime image can locate it via services/pdf_service.py.
+#   2. Download a pinned, MUSL-LINKED Tectonic LaTeX compiler
+#      and install it into the project tree at
+#      .tectonic/tectonic so the runtime image can locate it
+#      via services/pdf_service.py.
 #   3. Pre-warm Tectonic's package cache (also inside the
 #      project tree at .tectonic/cache/) by compiling a small
 #      dummy document during build. Without this the first
@@ -19,13 +20,42 @@
 #      over Render's slower egress and blow past the compile
 #      timeout.
 #
+# WHY MUSL-LINKED (not the default gnu-linked artifact)?
+# -----------------------------------------------------
+# The default Tectonic binaries on GitHub Releases are built
+# against Ubuntu 24.04's glibc (2.39). Render's Python runtime
+# image is based on an older Ubuntu (typically 22.04, glibc
+# 2.35). glibc is forward-compatible WITHIN major versions
+# but NOT backward: a binary built for 2.39 cannot run on
+# 2.35, and it fails at startup with errors like:
+#
+#   /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
+#   /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
+#
+# The musl-linked Tectonic artifact is statically linked
+# against musl libc, which means it has NO external glibc
+# dependency at all — it bundles its own libc and runs on any
+# Linux system regardless of glibc version. This is the same
+# approach used by Alpine Linux and by every "static binary"
+# distribution. Downgrading Tectonic would only postpone the
+# problem (every new Ubuntu release bumps glibc); the musl
+# artifact sidesteps it entirely.
+#
+# Compared to the gnu-linked binary, the musl artifact is:
+#   • Truly portable: runs on any Linux regardless of libc
+#   • Identical in functionality (same upstream Tectonic build,
+#     just linked against musl instead of glibc)
+#   • ~10 MB smaller (no glibc version metadata)
+#   • Maintained upstream by the Tectonic team as a
+#     first-class release artifact — not a third-party build
+#
 # WHY .tectonic/ IN THE PROJECT DIRECTORY?
 # ----------------------------------------
 # On Render's Python runtime the base image directories are
-# read-only (mv into /usr/local/bin fails with
-# "inter-device move ... Read-only file system"), and arbitrary
-# files written to $HOME during build are not guaranteed to
-# survive into the runtime image. The project directory itself
+# read-only (mv into /usr/local/bin fails with "inter-device
+# move ... Read-only file system"), and arbitrary files written
+# to $HOME during build are not guaranteed to survive into the
+# runtime image. The project directory itself
 # (/opt/render/project/src) IS writable during build AND is
 # carried into the runtime image, so it is the safe place to
 # drop the binary AND the package cache.
@@ -48,12 +78,16 @@ set -o pipefail  # Fail on first error in a pipeline
 
 # ── Configuration ────────────────────────────────────────────
 TECTONIC_VERSION="0.16.9"
-TECTONIC_ARCHIVE="tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+
+# MUSL-LINKED STATIC BINARY: works on any Linux, regardless of
+# the host's glibc version. See the comment block above for
+# the full rationale.
+TECTONIC_TARGET="x86_64-unknown-linux-musl"
+TECTONIC_ARCHIVE="tectonic-${TECTONIC_VERSION}-${TECTONIC_TARGET}.tar.gz"
 TECTONIC_URL="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/${TECTONIC_ARCHIVE}"
 
 # Resolve project directory. Render's build runs with pwd at the
-# project root, so $(pwd) is reliable. We pin the install to a
-# .tectonic/ folder at that root.
+# project root, so $(pwd) is reliable.
 PROJECT_ROOT="$(pwd)"
 TECTONIC_DIR="${PROJECT_ROOT}/.tectonic"
 TECTONIC_BIN="${TECTONIC_DIR}/tectonic"
@@ -61,36 +95,84 @@ TECTONIC_CACHE="${TECTONIC_DIR}/cache"
 
 # ── Step 1: Install Python dependencies ──────────────────────
 echo "──────────────────────────────────────────────────────────"
-echo "Step 1/2: Installing Python dependencies"
+echo "Step 1/3: Installing Python dependencies"
 echo "──────────────────────────────────────────────────────────"
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# ── Step 2: Install Tectonic ─────────────────────────────────
+# ── Step 2: Install Tectonic (musl-static) ───────────────────
 echo "──────────────────────────────────────────────────────────"
-echo "Step 2/3: Installing Tectonic v${TECTONIC_VERSION}"
+echo "Step 2/3: Installing Tectonic v${TECTONIC_VERSION} (musl-static)"
 echo "──────────────────────────────────────────────────────────"
 
 # Skip the download if a usable Tectonic is already on PATH.
+# This makes the script idempotent and lets a future Render
+# runtime image that ships tectonic system-wide skip the
+# download entirely.
 if command -v tectonic >/dev/null 2>&1 && tectonic --version >/dev/null 2>&1; then
     echo "Tectonic already present on PATH: $(command -v tectonic)"
     echo "  Version: $(tectonic --version 2>&1 | head -n 1)"
 else
     echo "Downloading ${TECTONIC_URL} ..."
-    curl -fsSL -o "/tmp/${TECTONIC_ARCHIVE}" "${TECTONIC_URL}"
+    if ! curl -fsSL -o "/tmp/${TECTONIC_ARCHIVE}" "${TECTONIC_URL}"; then
+        echo "ERROR: Failed to download ${TECTONIC_URL}." >&2
+        echo "       Check that Tectonic v${TECTONIC_VERSION} publishes a" >&2
+        echo "       ${TECTONIC_TARGET} artifact at the URL above." >&2
+        echo "       See: https://github.com/tectonic-typesetting/tectonic/releases" >&2
+        exit 1
+    fi
+
+    # Sanity-check the archive size. Anything under 1 MB almost
+    # certainly means we got an HTML error page from GitHub
+    # instead of a real tarball — e.g. wrong version, missing
+    # musl target, GitHub rate limit. Fail loudly here so the
+    # cause is obvious in the build log.
+    ARCHIVE_BYTES=$(stat -c %s "/tmp/${TECTONIC_ARCHIVE}" 2>/dev/null \
+        || stat -f %z "/tmp/${TECTONIC_ARCHIVE}" 2>/dev/null \
+        || echo 0)
+    if [ "${ARCHIVE_BYTES}" -lt 1048576 ]; then
+        echo "ERROR: Downloaded archive is only ${ARCHIVE_BYTES} bytes." >&2
+        echo "       Expected ≥ 1 MB. The URL probably points to an" >&2
+        echo "       HTML error page, or Tectonic v${TECTONIC_VERSION}" >&2
+        echo "       does not publish a ${TECTONIC_TARGET} artifact." >&2
+        echo "       Verify the release at:" >&2
+        echo "         https://github.com/tectonic-typesetting/tectonic/releases" >&2
+        exit 1
+    fi
 
     echo "Extracting tectonic binary to /tmp ..."
     tar -xzf "/tmp/${TECTONIC_ARCHIVE}" -C /tmp tectonic
+
+    if [ ! -f /tmp/tectonic ]; then
+        echo "ERROR: tar extraction did not produce /tmp/tectonic." >&2
+        echo "       Archive layout may have changed; check the release page." >&2
+        exit 1
+    fi
+
     chmod +x /tmp/tectonic
 
-    # Install into .tectonic/ at the project root. This dir is
-    # writable during build and its contents are copied into the
-    # runtime image, so gunicorn will find it on startup.
+    # ── Pre-install functional check ──────────────────────────
+    # Run the binary once to confirm it actually executes in
+    # THIS environment. This catches GLIBC / libc mismatches,
+    # missing linker deps, and corrupted downloads at BUILD
+    # time — where the failure is visible in build logs —
+    # rather than at first runtime request — where the user
+    # sees a confusing 500 error.
+    echo "Verifying tectonic --version runs in this environment ..."
+    if ! /tmp/tectonic --version >/dev/null 2>&1; then
+        echo "ERROR: /tmp/tectonic --version failed." >&2
+        echo "       The binary is likely incompatible with this" >&2
+        echo "       image (e.g. wrong libc target). Output:" >&2
+        /tmp/tectonic --version >&2 || true
+        exit 1
+    fi
+
+    # Install into .tectonic/ at the project root.
     echo "Installing tectonic to ${TECTONIC_BIN} ..."
     mkdir -p "${TECTONIC_DIR}"
     mv /tmp/tectonic "${TECTONIC_BIN}"
 
-    # Clean up the downloaded archive (the binary is now in place).
+    # Clean up the downloaded archive.
     rm -f "/tmp/${TECTONIC_ARCHIVE}"
 fi
 
@@ -107,8 +189,9 @@ fi
 #   2. Compile a small dummy document during build so the
 #      runtime image already has every package Tectonic needs.
 #
-# The runtime side (services/pdf_service.py) sets the same
-# TECTONIC_CACHE_DIR env var so all compiles hit this cache.
+# At runtime, services/pdf_service.py reads this same directory
+# and sets TECTONIC_CACHE_DIR to it before invoking tectonic,
+# so all runtime compiles hit the pre-warmed cache.
 echo "──────────────────────────────────────────────────────────"
 echo "Step 3/3: Pre-warming Tectonic package cache"
 echo "──────────────────────────────────────────────────────────"
@@ -130,8 +213,8 @@ Hello from BuildR's Tectonic cache warmup.
 LATEX
 
 # Compile with the project-tree cache. Tectonic will download
-# any packages it doesn't yet have. This is the long step (up
-# to a couple of minutes on slow Render egress).
+# any packages it doesn't yet have. This is the long step
+# (potentially a couple of minutes on slow Render egress).
 echo "Compiling smoke document (this downloads LaTeX packages on first run) ..."
 TECTONIC_CACHE_DIR="${TECTONIC_CACHE}" \
     "${TECTONIC_BIN}" --keep-logs --outdir /tmp "${DUMMY_TEX}"
