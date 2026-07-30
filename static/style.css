@@ -2143,6 +2143,173 @@ body.builder-active .save-bar {
     font-weight: 500;
 }
 
+
+/* ==========================================================================
+   SIGN-IN OVERLAY + SIGN-OUT BUTTON
+   ========================================================================== */
+
+/* Auth overlay: dim background, centered card. Hidden by default — app.js
+   removes the [hidden] attribute on body once whoami reports authenticated.
+   We layer it above the loading overlay so sign-in is reachable even mid-load. */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(17, 17, 17, 0.78);
+    backdrop-filter: blur(8px);
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-xl);
+}
+
+.auth-overlay[hidden] {
+    display: none !important;
+}
+
+.auth-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2xl) var(--space-xl);
+    width: 100%;
+    max-width: 440px;
+    box-shadow: var(--shadow-elevated);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+.auth-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.auth-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.auth-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.auth-input {
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    padding: var(--space-md);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-input, var(--bg-card));
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+
+.auth-input:focus {
+    outline: none;
+    border-color: var(--accent-solid);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.auth-submit {
+    font-family: 'Sora', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: var(--space-md);
+    border: none;
+    border-radius: var(--radius-md);
+    background-color: var(--accent-solid);
+    color: #ffffff;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.auth-submit:hover {
+    background-color: var(--accent-hover, #4f46e5);
+}
+
+.auth-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.auth-error {
+    color: #ef4444;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.auth-error[hidden] {
+    display: none !important;
+}
+
+.auth-footnote {
+    color: var(--text-tertiary, var(--text-secondary));
+    font-size: 0.78rem;
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* Sign-out button — positioned next to the theme toggle, top-right of the
+   app shell. Hidden until app.js confirms authenticated state. */
+.sign-out-btn {
+    position: fixed;
+    top: var(--space-lg);
+    right: calc(var(--space-lg) + 56px); /* leave room for #theme-toggle */
+    z-index: 1000;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    color: var(--text-secondary);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sign-out-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-solid);
+}
+
+.sign-out-btn[hidden] {
+    display: none !important;
+}
+
+.sign-out-icon {
+    width: 14px;
+    height: 14px;
+}
+
 /* ──────────────────────────────────────────────────────────────
    TAILOR YOUR RESUME PAGE STYLES
    ──────────────────────────────────────────────────────────── */

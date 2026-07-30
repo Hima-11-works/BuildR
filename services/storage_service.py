@@ -1,17 +1,29 @@
 # ──────────────────────────────────────────────────────────────
-# services/storage_service.py — Load & save the user's profile
+# services/storage_service.py — Per-user profile load/save
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
 # -------------------
 # Two functions:
-#   load_profile()  →  reads  storage/profile.json  →  Profile object
-#   save_profile()  →  Profile object  →  writes  storage/profile.json
+#   load_profile(user_id)  →  reads  storage/users/<user_id>/profile.json
+#                              → Profile object
+#   save_profile(user_id, profile)  →  Profile object
+#                              → writes  storage/users/<user_id>/profile.json
 #
 # That's it — intentionally thin.  The rest of the app never
 # touches the filesystem directly; it always goes through here.
 # This gives us ONE place to change if we later swap JSON files
 # for a database, cloud storage, etc.
+#
+# WHY PER-USER SCOPING
+# --------------------
+# Each user's master profile lives at storage/users/<user_id>/profile.json
+# so two users can never overwrite each other's data, even by accident.
+# The user_id is the SHA-256 prefix of the user's email (see
+# services/auth_service.py) and is supplied by the route handler after
+# @require_auth has confirmed a signed-in session. Storage code does NOT
+# trust user-supplied identifiers — auth_service.user_root() rejects
+# anything that isn't a valid hex string before this layer is reached.
 #
 # WHY WE VALIDATE ON BOTH LOAD *AND* SAVE
 # ─────────────────────────────────────────
@@ -57,28 +69,33 @@ from pathlib import Path
 
 from models.profile import Profile
 
-
-# ── Where profile data lives on disk ─────────────────────────
-# Path(__file__) points to THIS file (storage_service.py).
-# .resolve() makes it absolute, .parent goes up to services/,
-# .parent again goes to the project root.
-# We then descend into storage/profile.json.
-#
-# Using Path objects (not string concatenation) is a best
-# practice because Path handles OS differences (/ vs \)
-# and gives us clean methods like .exists() and .read_text().
-# ──────────────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PROFILE_PATH = _PROJECT_ROOT / "storage" / "profile.json"
+from services.auth_service import user_root
 
 
-def load_profile() -> Profile:
+def user_profile_path(user_id: str) -> Path:
+    """
+    Return <project>/storage/users/<user_id>/profile.json. The user's
+    root directory is created if it does not yet exist. The actual
+    profile.json file may or may not exist — callers handle the
+    "first run" case.
+    """
+    return user_root(user_id) / "profile.json"
+
+
+def load_profile(user_id: str) -> Profile:
     """
     Read the user's profile from disk and return a validated
     Profile object.
 
-    If the file doesn't exist yet (first run), returns a blank
-    Profile with safe defaults — no crash, no special setup.
+    If the file doesn't exist yet (first run for this user),
+    returns a blank Profile with safe defaults — no crash, no
+    special setup.
+
+    Parameters
+    ----------
+    user_id : str
+        The authenticated user's id. Comes from
+        auth_service.current_user_id() after @require_auth.
 
     Raises
     ------
@@ -92,36 +109,34 @@ def load_profile() -> Profile:
         If profile.json exists but isn't valid JSON.
     """
 
-    if not PROFILE_PATH.exists():
+    profile_path = user_profile_path(user_id)
+    if not profile_path.exists():
         # ── First run: return empty defaults ──────────────────
         # Profile's default_factory fields produce a valid
         # (but empty) profile automatically.
         return Profile()
 
     # ── Read the raw JSON ─────────────────────────────────────
-    raw_text = PROFILE_PATH.read_text(encoding="utf-8")
+    raw_text = profile_path.read_text(encoding="utf-8")
     raw_data = json.loads(raw_text)
 
     # ── Validate and build the Profile ────────────────────────
     # model_validate() is the recommended Pydantic v2 method.
     # It accepts a dict and returns a fully validated model, or
     # raises ValidationError with every problem it found.
-    #
-    # Why model_validate() instead of Profile(**raw_data)?
-    #   Both work, but model_validate() is more explicit and
-    #   supports extra options (strict mode, context, etc.)
-    #   that we might need later.
     profile = Profile.model_validate(raw_data)
 
     return profile
 
 
-def save_profile(profile: Profile) -> None:
+def save_profile(user_id: str, profile: Profile) -> None:
     """
     Validate a Profile object and write it to disk as JSON.
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     profile : Profile
         The profile to persist.  Even though it's already a
         Pydantic model, we re-validate to catch any in-memory
@@ -158,13 +173,9 @@ def save_profile(profile: Profile) -> None:
     # a single profile document.
     json_string = validated.model_dump_json(indent=2)
 
-    # ── Ensure the storage/ directory exists ──────────────────
-    # parents=True creates any missing intermediate directories.
-    # exist_ok=True means "don't error if it already exists."
-    PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
     # ── Write atomically-ish ──────────────────────────────────
     # For a personal tool, write_text is fine.  In a production
     # system, you'd write to a temp file and rename (atomic swap)
     # to prevent corruption from partial writes.
-    PROFILE_PATH.write_text(json_string, encoding="utf-8")
+    profile_path = user_profile_path(user_id)
+    profile_path.write_text(json_string, encoding="utf-8")

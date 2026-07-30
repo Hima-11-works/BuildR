@@ -1,14 +1,23 @@
 # ──────────────────────────────────────────────────────────────
-# services/resume_library.py — Persistent resume storage & retrieval
+# services/resume_library.py — Per-user persistent resume library
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
 # -------------------
-# Manages a library of generated resumes on disk.  Each resume
-# lives in its own folder under storage/resumes/, containing:
+# Manages a per-user library of generated resumes on disk. Each resume
+# lives in its own folder under storage/users/<user_id>/resumes/,
+# containing:
 #   • resume.tex   — the editable LaTeX source
 #   • resume.pdf   — the compiled PDF
 #   • metadata.json — type, label, date, job description (if any)
+#
+# PER-USER SCOPING
+# ----------------
+# Every public function takes user_id as its first argument. All paths
+# derive from `user_resumes_dir(user_id)` — there is no shared global
+# directory. Two users on the same server cannot see each other's
+# resumes: their libraries live in distinct folders and the path-
+# traversal resolve() check is anchored on the per-user dir.
 #
 # FOLDER NAMING / ID SCHEME
 # ─────────────────────────
@@ -22,7 +31,7 @@
 #   • Sanitized label keeps only [a-zA-Z0-9_-], truncated to 50
 #     chars.  This prevents path traversal (../), null bytes,
 #     and OS-illegal characters.
-#   • Human-readable — you can browse storage/resumes/ directly.
+#   • Human-readable — you can browse the library directly.
 #   • The folder name doubles as the resume ID in API routes,
 #     so no database is required.
 #
@@ -37,11 +46,12 @@
 # DELETE SAFETY (PATH TRAVERSAL PROTECTION)
 # ──────────────────────────────────────────
 # The delete function uses a resolve-and-verify pattern:
-#   1. Construct candidate path: RESUMES_DIR / id
+#   1. Construct candidate path: user_resumes_dir(user_id) / id
 #   2. Call .resolve() to collapse .., symlinks, etc.
-#   3. Assert resolved path starts with RESUMES_DIR.resolve()
+#   3. Assert resolved path is strictly inside the user's dir
 #   4. Only then call shutil.rmtree()
-# This blocks ../../../etc/passwd and symlink attacks.
+# This blocks ../../../etc/passwd and symlink attacks — and it
+# also ensures Alice's resume_id cannot reach Bob's directory.
 # ──────────────────────────────────────────────────────────────
 
 from __future__ import annotations
@@ -53,10 +63,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from services.auth_service import user_root
 
-# ── Base directory for all saved resumes ──────────────────────
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RESUMES_DIR = _PROJECT_ROOT / "storage" / "resumes"
+
+def user_resumes_dir(user_id: str) -> Path:
+    """
+    Return <project>/storage/users/<user_id>/resumes, creating the
+    directory tree if it does not yet exist. Every function in this
+    module that touches a resume file uses this helper, so all
+    library operations are automatically scoped to the authenticated
+    user.
+    """
+    resumes_dir = user_root(user_id) / "resumes"
+    resumes_dir.mkdir(parents=True, exist_ok=True)
+    return resumes_dir
+
 
 # ── Filenames used inside each resume folder ──────────────────
 _TEX_FILENAME = "resume.tex"
@@ -101,7 +122,7 @@ def _make_resume_id(label: str) -> str:
     Example: 20260701-005402_master
 
     The timestamp is precise to the second.  For a single-user
-    tool, this is sufficient — you won't generate two resumes
+    library, this is sufficient — you won't generate two resumes
     in the same second.
     """
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -109,33 +130,33 @@ def _make_resume_id(label: str) -> str:
     return f"{timestamp}_{safe_label}"
 
 
-def _validate_resume_id(resume_id: str) -> Path:
+def _validate_resume_id(user_id: str, resume_id: str) -> Path:
     """
-    Validate a resume ID and return the safe, resolved path.
+    Validate a resume ID and return the safe, resolved path inside
+    the user's resumes directory.
 
     SECURITY: This is the gatekeeper for all read/delete ops.
     It prevents path traversal by:
-      1. Constructing the candidate path from RESUMES_DIR / id
+      1. Constructing the candidate path from user_resumes_dir(user_id) / id
       2. Resolving to an absolute canonical path
-      3. Verifying it lives strictly *inside* RESUMES_DIR (not equal to
-         it — resume_id="." would otherwise resolve to RESUMES_DIR
-         itself, and delete_resume(".") would rmtree() the entire
-         library)
+      3. Verifying it lives strictly *inside* the user's dir (not
+         equal to it — resume_id="." would otherwise resolve to
+         the user's resumes dir itself, and delete_resume(".")
+         would rmtree() the user's entire library)
 
     Raises
     ------
     ValueError
         If the ID is empty, contains suspicious characters,
-        or resolves to a path outside (or equal to) RESUMES_DIR.
+        or resolves to a path outside (or equal to) the user's dir.
     FileNotFoundError
         If the resolved folder doesn't exist on disk.
     """
     if not resume_id or not resume_id.strip():
         raise ValueError("Resume ID cannot be empty.")
 
-    # Construct and resolve. .resolve() collapses .., follows symlinks, etc.
-    candidate = (RESUMES_DIR / resume_id).resolve()
-    base = RESUMES_DIR.resolve()
+    base = user_resumes_dir(user_id).resolve()
+    candidate = (base / resume_id).resolve()
 
     if candidate == base or not candidate.is_relative_to(base):
         raise ValueError("Invalid resume ID: path traversal detected.")
@@ -151,6 +172,7 @@ def _validate_resume_id(resume_id: str) -> Path:
 # ══════════════════════════════════════════════════════════════
 
 def save_resume(
+    user_id: str,
     tex_string: str,
     pdf_path: Path,
     resume_type: str,
@@ -158,10 +180,13 @@ def save_resume(
     job_description: Optional[str] = None,
 ) -> str:
     """
-    Persist a generated resume to its own folder.
+    Persist a generated resume to its own folder inside the user's
+    library.
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     tex_string : str
         The complete LaTeX source that produced the PDF.
     pdf_path : Path
@@ -180,7 +205,7 @@ def save_resume(
         The resume ID (which is also the folder name).
     """
     resume_id = _make_resume_id(label)
-    resume_dir = RESUMES_DIR / resume_id
+    resume_dir = user_resumes_dir(user_id) / resume_id
     resume_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Write the .tex source ─────────────────────────────────
@@ -200,6 +225,7 @@ def save_resume(
         "label": label,
         "date": datetime.now().isoformat(),
         "job_description": job_description,
+        "user_id": user_id,
     }
     meta_path = resume_dir / _META_FILENAME
     meta_path.write_text(
@@ -210,18 +236,17 @@ def save_resume(
     return resume_id
 
 
-def list_resumes() -> list[dict]:
+def list_resumes(user_id: str) -> list[dict]:
     """
-    Scan storage/resumes/ and return metadata for all saved resumes.
-
-    Returns a list of metadata dicts, sorted newest-first.
+    Scan the user's resumes directory and return metadata for all
+    saved resumes. Returns a list of metadata dicts sorted newest-first.
     Folders without a valid metadata.json are silently skipped
     (they might be leftover temp files from failed compilations).
     """
-    RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+    resumes_dir = user_resumes_dir(user_id)
 
     resumes = []
-    for entry in RESUMES_DIR.iterdir():
+    for entry in resumes_dir.iterdir():
         if not entry.is_dir():
             continue
 
@@ -247,42 +272,49 @@ def list_resumes() -> list[dict]:
     return resumes
 
 
-def delete_resumes_by_type(resume_type: str) -> int:
+def delete_resumes_by_type(user_id: str, resume_type: str) -> int:
     """
-    Delete every saved resume of the given type (e.g. "master").
+    Delete every saved resume of the given type (e.g. "master") for
+    the given user.
 
     WHY THIS EXISTS
     ----------------
-    Every "Generate Master PDF" click used to call save_resume() with a
-    fresh timestamp, so regenerating the same master resume after every
-    profile edit piled up an ever-growing stack of "Master" entries that
-    only differed by date. The master resume is a single canonical
-    document, not a history — callers use this to clear out prior master
-    entries immediately before saving the newly generated one, so exactly
-    one "Master" entry ever exists in the library at a time. Tailored
-    resumes are unaffected; each one is a distinct, intentionally-kept
-    artifact for a specific job application.
+    Every "Generate Master PDF" click used to call save_resume() with
+    a fresh timestamp, so regenerating the same master resume after
+    every profile edit piled up an ever-growing stack of "Master"
+    entries that only differed by date. The master resume is a single
+    canonical document, not a history — callers use this to clear out
+    prior master entries immediately before saving the newly generated
+    one, so exactly one "Master" entry ever exists in a user's library
+    at a time. Tailored resumes are unaffected; each one is a distinct,
+    intentionally-kept artifact for a specific job application.
+
+    IMPORTANT: This must call list_resumes(user_id) — the user-scoped
+    list — not a global one, so it never deletes another user's masters.
 
     Returns the number of resume folders removed.
     """
     removed = 0
-    for meta in list_resumes():
+    for meta in list_resumes(user_id):
         if meta.get("type") != resume_type:
             continue
         try:
-            delete_resume(meta["id"])
+            delete_resume(user_id, meta["id"])
             removed += 1
         except (ValueError, FileNotFoundError):
             continue
     return removed
 
 
-def get_resume_path(resume_id: str, file_type: str) -> Path:
+def get_resume_path(user_id: str, resume_id: str, file_type: str) -> Path:
     """
-    Get the path to a specific file in a resume folder.
+    Get the path to a specific file in a resume folder inside the
+    user's library.
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     resume_id : str
         The folder name / resume ID.
     file_type : str
@@ -300,7 +332,7 @@ def get_resume_path(resume_id: str, file_type: str) -> Path:
     FileNotFoundError
         If the resume folder or file doesn't exist.
     """
-    resume_dir = _validate_resume_id(resume_id)
+    resume_dir = _validate_resume_id(user_id, resume_id)
 
     if file_type == "pdf":
         file_path = resume_dir / _PDF_FILENAME
@@ -317,18 +349,20 @@ def get_resume_path(resume_id: str, file_type: str) -> Path:
     return file_path
 
 
-def delete_resume(resume_id: str) -> bool:
+def delete_resume(user_id: str, resume_id: str) -> bool:
     """
-    Delete a saved resume and its entire folder.
+    Delete a saved resume and its entire folder from the user's library.
 
     Uses resolve-and-verify to prevent path traversal:
-      1. Construct: RESUMES_DIR / resume_id
+      1. Construct: user_resumes_dir(user_id) / resume_id
       2. Resolve:   collapse .., symlinks → canonical path
-      3. Verify:    canonical path is inside RESUMES_DIR
+      3. Verify:    canonical path is inside the user's resumes dir
       4. Delete:    shutil.rmtree() only if all checks pass
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     resume_id : str
         The folder name / resume ID to delete.
 
@@ -344,22 +378,24 @@ def delete_resume(resume_id: str) -> bool:
     FileNotFoundError
         If the resume doesn't exist.
     """
-    resume_dir = _validate_resume_id(resume_id)
+    resume_dir = _validate_resume_id(user_id, resume_id)
 
     # ── Safe to delete ────────────────────────────────────────
     shutil.rmtree(resume_dir)
     return True
 
 
-def rename_resume(resume_id: str, new_label: str) -> dict:
+def rename_resume(user_id: str, resume_id: str, new_label: str) -> dict:
     """
     Update a saved resume's display label in metadata.json.
 
-    Only the human-readable label changes — the folder name / resume ID
-    stays the same, so existing download links keep working.
+    Only the human-readable label changes — the folder name / resume
+    ID stays the same, so existing download links keep working.
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     resume_id : str
         The folder name / resume ID to rename.
     new_label : str
@@ -381,7 +417,7 @@ def rename_resume(resume_id: str, new_label: str) -> dict:
     if not new_label:
         raise ValueError("Label cannot be empty.")
 
-    resume_dir = _validate_resume_id(resume_id)
+    resume_dir = _validate_resume_id(user_id, resume_id)
     meta_path = resume_dir / _META_FILENAME
     if not meta_path.exists():
         raise FileNotFoundError(f"Metadata not found for resume '{resume_id}'.")
@@ -393,7 +429,7 @@ def rename_resume(resume_id: str, new_label: str) -> dict:
     return meta
 
 
-def duplicate_resume(resume_id: str, new_label: Optional[str] = None) -> str:
+def duplicate_resume(user_id: str, resume_id: str, new_label: Optional[str] = None) -> str:
     """
     Copy a saved resume (tex + pdf + metadata) into a new library entry.
 
@@ -402,6 +438,8 @@ def duplicate_resume(resume_id: str, new_label: Optional[str] = None) -> str:
 
     Parameters
     ----------
+    user_id : str
+        The authenticated user's id.
     resume_id : str
         The folder name / resume ID to duplicate.
     new_label : str, optional
@@ -419,7 +457,7 @@ def duplicate_resume(resume_id: str, new_label: Optional[str] = None) -> str:
     FileNotFoundError
         If the source resume doesn't exist.
     """
-    source_dir = _validate_resume_id(resume_id)
+    source_dir = _validate_resume_id(user_id, resume_id)
     meta_path = source_dir / _META_FILENAME
     if not meta_path.exists():
         raise FileNotFoundError(f"Metadata not found for resume '{resume_id}'.")
@@ -428,13 +466,14 @@ def duplicate_resume(resume_id: str, new_label: Optional[str] = None) -> str:
     label = (new_label or "").strip() or f"{meta.get('label', 'Resume')} (Copy)"
 
     new_id = _make_resume_id(label)
-    new_dir = RESUMES_DIR / new_id
+    new_dir = user_resumes_dir(user_id) / new_id
     shutil.copytree(source_dir, new_dir)
 
     new_meta = dict(meta)
     new_meta["id"] = new_id
     new_meta["label"] = label
     new_meta["date"] = datetime.now().isoformat()
+    new_meta["user_id"] = user_id
     (new_dir / _META_FILENAME).write_text(
         json.dumps(new_meta, indent=2, ensure_ascii=False), encoding="utf-8"
     )

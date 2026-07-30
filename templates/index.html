@@ -48,6 +48,12 @@
             <i data-lucide="sun" class="theme-icon sun-icon"></i>
             <i data-lucide="moon" class="theme-icon moon-icon"></i>
         </button>
+
+        <!-- Sign Out — hidden until whoami reports authenticated -->
+        <button type="button" id="sign-out-btn" class="sign-out-btn" aria-label="Sign out" hidden>
+            <i data-lucide="log-out" class="sign-out-icon"></i>
+            <span class="sign-out-label">Sign out</span>
+        </button>
         <!-- ═══════════════════════════════════════════════════════
          HOME VIEW
          ═══════════════════════════════════════════════════════ -->
@@ -865,6 +871,29 @@
             <div class="loading-spinner"></div>
             <h3 id="loading-title">Importing Resume</h3>
             <p id="loading-message">Uploading Resume...</p>
+        </div>
+    </div>
+
+    <!-- ── Sign-in Overlay (visible until /api/auth/whoami returns authenticated) -->
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <h2 class="auth-title">Sign in to BuildR</h2>
+            <p class="auth-subtitle">Enter your email to access your resumes. Each email keeps its own private workspace.</p>
+            <form id="auth-form" class="auth-form" autocomplete="email">
+                <label class="auth-field">
+                    <span class="auth-label">Email address</span>
+                    <input id="auth-email" type="email" class="auth-input" placeholder="you@example.com" required>
+                </label>
+                <button id="auth-submit-btn" type="submit" class="auth-submit">
+                    Continue
+                </button>
+                <p id="auth-error" class="auth-error" hidden></p>
+            </form>
+            <p class="auth-footnote">
+                Sign-in uses your email as the credential. Anyone who knows your
+                email can access this workspace — see the deployment guide for
+                the security implications.
+            </p>
         </div>
     </div>
 

@@ -1895,8 +1895,28 @@ function showRenameModal({ title = "Rename Resume", initialValue = "" } = {}) {
 // ═══════════════════════════════════════════════════════════════
 
 document.addEventListener("DOMContentLoaded", () => {
-    // ── Load profile on page load ────────────────────────────
-    loadProfile();
+    // ── Auth bootstrap ────────────────────────────────────────
+    // The /api/auth/whoami endpoint tells us whether a signed-in
+    // session cookie is present. Until it does, we render only the
+    // auth overlay and suppress every other interaction. After
+    // sign-in, the server returns 200 + a redirect-via-reload,
+    // so by the time we run again the cookie is already set.
+    bootstrapAuth().then((authenticated) => {
+        if (!authenticated) {
+            // The overlay is already visible (no [hidden] attr).
+            // Wire up the form so the user can submit an email.
+            wireSignInForm();
+            return;
+        }
+        startSignedInApp();
+    });
+
+    function startSignedInApp() {
+        // ── Load profile on page load ────────────────────────────
+        loadProfile();
+    }
+
+    // ── Initial Icon Rendering ──────────────────────────────
 
     // ── Initial Icon Rendering ──────────────────────────────
     refreshIcons();
@@ -3638,6 +3658,146 @@ function setupWorkspaceEventsOnce() {
     }
     
     isEventsWired = true;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH — sign-in overlay, sign-out button, whoami bootstrap
+// ═══════════════════════════════════════════════════════════════
+//
+// All authenticated requests rely on the `session` cookie set by
+// /api/auth/sign-in. The bootstrap function below calls
+// /api/auth/whoami on page load; if no session is present we
+// keep the auth overlay visible and never make data calls. After
+// sign-in we do a full `window.location.reload()` to wipe every
+// module-scope cache (cachedProfile, _libraryResumes,
+// workspaceSessionId, editorInstances, etc.) — a full reload is
+// the bulletproof way to guarantee the previous user's state
+// doesn't leak into the new user's UI.
+
+async function bootstrapAuth() {
+    const overlay = document.getElementById("auth-overlay");
+    const signOutBtn = document.getElementById("sign-out-btn");
+    const userDisplay = document.getElementById("auth-user-display");
+
+    let whoami;
+    try {
+        const resp = await fetch("/api/auth/whoami", { credentials: "same-origin" });
+        if (!resp.ok) {
+            // Server error or auth route missing — fall back to showing
+            // the overlay rather than crashing the SPA.
+            whoami = { authenticated: false };
+        } else {
+            whoami = await resp.json();
+        }
+    } catch (err) {
+        // Network or parse failure — show overlay.
+        console.warn("whoami fetch failed; defaulting to sign-in overlay.", err);
+        whoami = { authenticated: false };
+    }
+
+    if (!whoami.authenticated) {
+        // Keep overlay visible (it's visible by default in the markup).
+        if (signOutBtn) signOutBtn.hidden = true;
+        return false;
+    }
+
+    // Authenticated: hide overlay, show sign-out button, label it.
+    if (overlay) overlay.hidden = true;
+    if (signOutBtn) {
+        signOutBtn.hidden = false;
+        if (userDisplay) {
+            userDisplay.textContent = whoami.email || "";
+        }
+        // Wire up the click handler once.
+        if (!signOutBtn.dataset.wired) {
+            signOutBtn.dataset.wired = "1";
+            signOutBtn.addEventListener("click", handleSignOut);
+        }
+    }
+    return true;
+}
+
+
+function wireSignInForm() {
+    const form = document.getElementById("auth-form");
+    if (!form || form.dataset.wired) return;
+    form.dataset.wired = "1";
+
+    const emailInput = document.getElementById("auth-email");
+    const submitBtn = document.getElementById("auth-submit-btn");
+    const errorEl = document.getElementById("auth-error");
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = (emailInput.value || "").trim();
+        if (!email) {
+            showAuthError("Please enter your email address.");
+            return;
+        }
+        submitBtn.disabled = true;
+        const originalLabel = submitBtn.textContent;
+        submitBtn.textContent = "Signing in...";
+        try {
+            const resp = await fetch("/api/auth/sign-in", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => ({}));
+                showAuthError(body.error || "Sign-in failed.");
+                return;
+            }
+            // Success — clear any in-memory state from a previous user,
+            // then reload. The reload is what guarantees the SPA shell
+            // is re-evaluated from a clean module scope; everything
+            // that lives in module-scope variables (cachedProfile,
+            // workspaceSessionId, editorInstances, etc.) is reset.
+            try {
+                sessionStorage.clear();
+            } catch (e) {
+                console.warn("sessionStorage.clear() failed:", e);
+            }
+            window.location.reload();
+        } catch (err) {
+            showAuthError(err.message || "Network error.");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+        }
+    });
+
+    function showAuthError(msg) {
+        if (!errorEl) return;
+        errorEl.textContent = msg;
+        errorEl.hidden = false;
+    }
+}
+
+
+async function handleSignOut() {
+    const btn = document.getElementById("sign-out-btn");
+    if (btn) btn.disabled = true;
+    try {
+        await fetch("/api/auth/sign-out", {
+            method: "POST",
+            credentials: "same-origin",
+        });
+    } catch (err) {
+        console.warn("Sign-out request failed:", err);
+    }
+    // Wipe browser-side state before reload so the next user doesn't
+    // inherit any cached form drafts or workspace IDs.
+    try {
+        sessionStorage.clear();
+    } catch (e) {
+        console.warn("sessionStorage.clear() failed:", e);
+    }
+    // Note: we deliberately do NOT clear localStorage — the `theme`
+    // key there is a UI preference with no user data.
+    window.location.reload();
 }
 
 
