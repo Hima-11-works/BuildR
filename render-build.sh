@@ -80,7 +80,7 @@ else
     curl -fsSL -o "/tmp/${TECTONIC_ARCHIVE}" "${TECTONIC_URL}"
 
     echo "Extracting tectonic binary to /tmp ..."
-    tar -xzf "${TECTONIC_ARCHIVE}" -C /tmp tectonic
+    tar -xzf "/tmp/${TECTONIC_ARCHIVE}" -C /tmp tectonic
     chmod +x /tmp/tectonic
 
     # Install into .tectonic/ at the project root. This dir is
