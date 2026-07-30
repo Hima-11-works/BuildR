@@ -878,24 +878,36 @@
     <div id="auth-overlay" class="auth-overlay">
         <div class="auth-card">
             <h2 class="auth-title">Sign in to BuildR</h2>
-            <p class="auth-subtitle">Enter your email to access your resumes. Each email keeps its own private workspace.</p>
-            <form id="auth-form" class="auth-form" autocomplete="email">
-                <label class="auth-field">
-                    <span class="auth-label">Email address</span>
-                    <input id="auth-email" type="email" class="auth-input" placeholder="you@example.com" required>
-                </label>
-                <button id="auth-submit-btn" type="submit" class="auth-submit">
-                    Continue
-                </button>
-                <p id="auth-error" class="auth-error" hidden></p>
-            </form>
+            <p class="auth-subtitle">
+                Sign in with your Google account. Each Google account gets its own
+                private workspace — your data is identified by Google's verified
+                <code>sub</code> claim, not by an email you type.
+            </p>
+
+            <!--
+                Google Identity Services (GIS).
+                The script is loaded from accounts.google.com on page load.
+                The button below is rendered by GIS into #google-signin-button.
+                The callback posts the JWT to /api/auth/google.
+                GOOGLE_CLIENT_ID is injected into the GIS data attribute by
+                app.js (which reads it from a meta tag below).
+            -->
+            <div id="google-signin-button" class="auth-google-slot"></div>
+
+            <p id="auth-error" class="auth-error" hidden></p>
+
             <p class="auth-footnote">
-                Sign-in uses your email as the credential. Anyone who knows your
-                email can access this workspace — see the deployment guide for
-                the security implications.
+                Authentication is performed by Google. We verify Google's signed
+                ID token on the server; identity comes from the verified
+                <code>sub</code> claim, never from a user-entered email.
             </p>
         </div>
     </div>
+
+    <!-- The OAuth Client ID is sent to the browser this way (not hardcoded)
+         so the same index.html works for any deployment. The server reads
+         the same GOOGLE_CLIENT_ID env var when verifying ID tokens. -->
+    <meta name="google-client-id" content="">
 
     <!-- ── Toast Notification Container ────────────────────────── -->
     <div id="toast-container" class="toast-container"></div>

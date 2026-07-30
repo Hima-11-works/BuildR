@@ -1,67 +1,71 @@
 # ──────────────────────────────────────────────────────────────
-# services/auth_service.py — Email-based sign-in + per-user data isolation
+# services/auth_service.py — Google OAuth + per-user isolation
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
 # -------------------
-# Provides four primitives the rest of the app uses to gate every
-# data-touching operation on an authenticated user:
+# Verifies Google-issued ID tokens and establishes a Flask session
+# bound to the Google account's verified `sub` claim.
 #
-#   • user_id_from_email(email)  → str   deterministic 16-char hex user_id
-#   • sign_in(email)             → str   sets the session cookie, returns user_id
-#   • sign_out()                 → None  clears the session cookie
-#   • current_user_id()          → str | None  reads user_id from session cookie
-#   • require_auth               → decorator: 401 if no session, else passes
-#   • cleanup_expired_sessions_for_all_users() → iterates storage/users/* and
-#                                                 delegates to session_service
+#     POST /api/auth/google   { id_token: "<JWT from Google>" }
+#        │
+#        ├─→ verify_google_id_token(token)
+#        │      fetches Google's public keys (cached)
+#        │      verifies JWT signature, audience, issuer, expiry
+#        │      enforces email_verified == True
+#        │      returns the claims dict
+#        │
+#        ├─→ user_id_from_google_sub(sub)   # sha256(sub)[:16]
+#        │
+#        └─→ session["user_id"] = <derived id>
+#           session["email"]    = <display only>
 #
 # HOW IDENTITY WORKS
 # ------------------
-# A user's identity is their email address. There is NO password.
+# Identity comes from Google's `sub` claim — a stable, opaque
+# identifier that Google assigns to each Google account. It is the
+# ONLY field used to derive the on-disk user_id. Email is stored
+# purely as a display attribute and is never trusted as proof of
+# identity.
 #
-# user_id = sha256(email.lower().strip())[:16]
+# SECURITY MODEL
+# --------------
+# This module is what defends against "I know your email, give me
+# your data". A request body that contains an email field is NEVER
+# sufficient to sign in. The only path to a session is:
 #
-# This is deterministic (the same email always maps to the same user_id),
-# opaque (the user's email does not appear on disk), and path-safe
-# (hex characters only — no escapes, no separators, no length variation).
+#   1. Frontend invokes Google Identity Services (GIS).
+#   2. GIS handles Google's OAuth flow in a popup.
+#   3. GIS hands the SPA a cryptographically-signed JWT.
+#   4. The SPA POSTs that JWT to /api/auth/google.
+#   5. THIS module verifies the JWT's signature against Google's
+#      published public keys (https://www.googleapis.com/oauth2/v3/certs).
+#   6. Only then is a Flask session created.
 #
-# Per-user data lives at:
-#     <project>/storage/users/<user_id>/
-#         profile.json     (master profile)
-#         resumes/         (saved PDFs / .tex source / metadata.json)
-#         sessions/        (tailoring workspace scratch — auto-cleaned after 7d)
+# An attacker who knows a victim's email but does NOT control the
+# victim's Google account cannot produce a valid JWT with the
+# victim's `sub`. They cannot sign in. They cannot read or modify
+# the victim's data.
 #
-# SECURITY NOTE — EMAIL-ONLY AUTH (KNOWN LIMITATION)
-# -------------------------------------------------
-# This module is intentionally minimal: the email IS the credential.
-# Anyone who knows (or guesses) another user's email can sign in as
-# them and read or overwrite their data. This is the model the user
-# explicitly requested — they wanted "sign in with email" behavior,
-# not a password system — and it is appropriate for a single-tenant
-# deployment or trusted-user environment.
+# WHAT THIS FILE DOES NOT DO
+# --------------------------
+# - It does NOT call any third-party auth service beyond Google.
+# - It does NOT trust `email` for any authorization decision.
+# - It does NOT trust any field on the request body for identity.
+# - It does NOT accept a password (there is no password — the
+#   user's Google account IS the credential).
 #
-# If this is ever deployed in a hostile environment, this file is the
-# single place that needs to change — replace `sign_in` with one that
-# verifies a password / OTP / OAuth token before setting the session
-# cookie. The `user_id_from_email` helper and the @require_auth
-# decorator do not need to change.
+# PRODUCTION DEPLOYMENT MUST SET GOOGLE_CLIENT_ID AND SECRET_KEY
+# -------------------------------------------------------------
+# GOOGLE_CLIENT_ID is your OAuth 2.0 Client ID from Google Cloud
+# Console → APIs & Services → Credentials. Without it, this module
+# refuses to verify any token (returns 500 with a clear log line).
 #
-# COOKIE CONFIGURATION (set in app.py)
-# ------------------------------------
-# Flask's signed session cookie is the auth token. It carries
-# {"user_id": "...", "email": "..."}. Hardening in app.py:
+# SECRET_KEY is used by Flask to sign the session cookie. Set it
+# to a stable random value in production so user sessions survive
+# process restarts. Generate with:
 #
-#   SESSION_COOKIE_HTTPONLY = True   JS cannot read the cookie (XSS safety)
-#   SESSION_COOKIE_SAMESITE = "Lax"  CSRF defense for cross-origin POSTs
-#   SESSION_COOKIE_SECURE   = True   when not in debug mode
-#
-# PRODUCTION DEPLOYMENT MUST SET SECRET_KEY
-# -----------------------------------------
-# `app.secret_key` is signed with SECRET_KEY (or a random per-process
-# fallback). With per-process fallback, every restart invalidates every
-# user's session — they all see the auth overlay again on next load.
-# Set SECRET_KEY in .env (or Render dashboard) to a stable random value
-# generated with:  python -c "import secrets; print(secrets.token_hex(32))"
+#     python -c "import secrets; print(secrets.token_hex(32))"
 #
 # ──────────────────────────────────────────────────────────────
 
@@ -69,6 +73,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 from functools import wraps
 from pathlib import Path
@@ -80,40 +85,123 @@ from flask import jsonify, session
 logger = logging.getLogger(__name__)
 
 
-# ── Identity hashing ──────────────────────────────────────────
+# ── Identity derivation ────────────────────────────────────────
 _USER_ID_LEN = 16
-# Minimal shape check: one local part (no @, no whitespace), exactly
-# one @, a domain with at least one dot, no @ anywhere else, and no
-# whitespace. Doesn't reject "+", dots-in-local-part, or IDN, but the
-# email is *the* credential so we don't need to over-engineer validation.
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
 
-def user_id_from_email(email: str) -> str:
+def user_id_from_google_sub(sub: str) -> str:
     """
-    Deterministically derive a 16-character hex user_id from an email.
+    Deterministically derive a 16-character hex user_id from a
+    Google `sub` claim.
 
-    Two users with the same email produce the same user_id (that's
-    the whole point — same identity maps to the same on-disk folder).
-    Different emails produce different user_ids with overwhelming
-    probability (sha256 collision space is 2^64).
+    Two Google accounts with the same `sub` always produce the same
+    user_id (the whole point — same identity maps to the same on-disk
+    folder). Different `sub` values produce different user_ids with
+    overwhelming probability (sha256 collision space is 2^64).
     """
-    normalized = (email or "").strip().lower()
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    if not sub or not isinstance(sub, str):
+        raise ValueError("Google sub claim is required.")
+    digest = hashlib.sha256(sub.strip().encode("utf-8")).hexdigest()
     return digest[:_USER_ID_LEN]
 
 
-def validate_email(email: object) -> Optional[str]:
+# ── Google ID token verification ───────────────────────────────
+# We use google-auth's id_token.verify_oauth2_token because it:
+#   1. Fetches Google's published JWKs (with caching) — never trust
+#      a hardcoded key.
+#   2. Verifies the JWT signature against those keys.
+#   3. Validates `iss` is `https://accounts.google.com` or
+#      `accounts.google.com`.
+#   4. Validates `aud` matches our GOOGLE_CLIENT_ID.
+#   5. Validates `exp` is in the future.
+#
+# Importing google.auth.transport.requests lazily inside the verifier
+# keeps the module importable even in environments where the request
+# transport isn't fully usable (e.g. some test setups).
+
+def verify_google_id_token(id_token_str: str) -> dict:
     """
-    Return a normalized (lower-cased, trimmed) email if it looks
-    well-formed, else None. Caller should treat None as "reject this".
+    Verify a Google-issued ID token (JWT). Returns the verified claims
+    dict on success. Raises ValueError on any failure.
+
+    The returned dict always contains at least:
+        sub             — Google account's stable unique id
+        email           — display only; NEVER used as identity
+        email_verified  — True iff Google has confirmed email ownership
+        name            — display name (may be absent)
+        picture         — avatar URL (may be absent)
+
+    Verification guarantees (per google-auth library):
+        - Signature is valid against Google's published JWKs.
+        - `iss` claim is `https://accounts.google.com` or
+          `accounts.google.com`.
+        - `aud` claim equals our GOOGLE_CLIENT_ID.
+        - `exp` is in the future (token not expired).
+        - `nbf` (if present) is in the past.
+        - `iat` is in the past.
+
+    We additionally enforce:
+        - `sub` is present (Google always issues this).
+        - `email_verified` is True (Google only issues tokens with
+          verified=True for email owners; this rejects attacker
+          accounts that register someone else's email).
+
+    Raises
+    ------
+    ValueError
+        If the token is missing, malformed, expired, for a different
+        audience, or for an unverified email.
+    RuntimeError
+        If GOOGLE_CLIENT_ID is not configured.
     """
-    if not isinstance(email, str):
-        return None
-    candidate = email.strip()
-    if not candidate or not _EMAIL_RE.match(candidate):
-        return None
-    return candidate.lower()
+    if not id_token_str or not isinstance(id_token_str, str):
+        raise ValueError("An id_token is required.")
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID is not configured. Set it in your .env "
+            "or environment. Get one from Google Cloud Console → "
+            "APIs & Services → Credentials."
+        )
+
+    # Lazy import: google.auth.transport.requests uses urllib3 under
+    # the hood to fetch Google's JWKs. Importing inside the function
+    # means a misconfigured transport won't break module import.
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+
+    request_adapter = google_requests.Request()
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            id_token_str,
+            request_adapter,
+            audience=client_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — google-auth raises a
+        # variety of exception classes (GoogleAuthError, ValueError)
+        # for any verification failure. We collapse them all into
+        # a single ValueError so callers handle one error type.
+        logger.warning("Google ID token verification failed: %s", exc)
+        raise ValueError("Invalid Google ID token.") from exc
+
+    sub = claims.get("sub")
+    if not sub:
+        raise ValueError("Google ID token missing sub claim.")
+
+    if not claims.get("email_verified", False):
+        # An attacker can register a Google account with someone
+        # else's email address, but Google only issues an
+        # email_verified=true token to the actual owner of the
+        # Google account. Rejecting unverified tokens prevents the
+        # attacker from proving they own an email they don't.
+        raise ValueError("Google account email is not verified.")
+
+    logger.info(
+        "Verified Google ID token: sub=%s email=%s",
+        sub, claims.get("email", "(no email)"),
+    )
+    return claims
 
 
 # ── Per-user filesystem root ──────────────────────────────────
@@ -127,15 +215,11 @@ def user_root(user_id: str) -> Path:
     if it does not yet exist. Callers use this as the base for
     profile.json, resumes/, and sessions/.
 
-    We validate the user_id against the same path-safe character class
-    used elsewhere (alnum + "-" + "_") so that even if a route handler
-    is buggy and forwards an attacker-controlled id, this layer refuses
-    to materialize a directory outside the users tree. Production user_ids
-    are 16-char hex strings from user_id_from_email(), which trivially
+    Validation uses the same path-safe character class as session IDs
+    so even a buggy caller forwarding attacker input cannot materialize
+    a directory outside the users tree. Production user_ids are
+    16-char hex strings from user_id_from_google_sub, which trivially
     satisfies this allow-list.
-
-    We create the directory eagerly so subsequent writes never have
-    to wonder whether their parent dir exists.
     """
     if not user_id or not re.match(r"^[A-Za-z0-9_-]+$", user_id):
         raise ValueError(f"Invalid user_id: {user_id!r}")
@@ -148,7 +232,8 @@ def user_root(user_id: str) -> Path:
 def current_user_id() -> Optional[str]:
     """
     Return the user_id from the active session cookie, or None if no
-    user is signed in.
+    user is signed in. The user_id is the SHA-256 prefix of the
+    Google `sub` claim — see user_id_from_google_sub().
     """
     return session.get("user_id")
 
@@ -156,54 +241,68 @@ def current_user_id() -> Optional[str]:
 def current_user_email() -> Optional[str]:
     """
     Return the email from the active session cookie, or None. This
-    is purely informational; authorization decisions must use
-    current_user_id(), never this.
+    is purely informational (display); authorization decisions must
+    use current_user_id(), never this.
     """
     return session.get("email")
 
 
-def sign_in(email: str) -> tuple[str, str]:
+def sign_in_with_google(id_token_str: str) -> tuple[str, str]:
     """
-    Set the session cookie to identify the user. Returns
-    (user_id, email). Raises ValueError if the email is malformed.
+    Verify a Google-issued ID token, derive the user_id from its
+    verified `sub` claim, and establish a Flask session.
 
-    Side effect: persists (or updates) <USERS_ROOT>/<user_id>/user.json
-    with creation / last-seen timestamps so we have an audit trail
-    and can sanity-check that the directory actually exists.
+    Returns (user_id, email). The caller (app.py) reports these to
+    the SPA, which uses email as a display label and forgets the
+    user_id immediately after the response.
+
+    Raises
+    ------
+    ValueError
+        If the token is invalid, expired, for a different audience,
+        or for an unverified email. The caller should surface a
+        401 to the SPA.
+    RuntimeError
+        If GOOGLE_CLIENT_ID is not configured.
     """
-    normalized = validate_email(email)
-    if normalized is None:
-        raise ValueError("Please enter a valid email address.")
+    claims = verify_google_id_token(id_token_str)
+    sub = claims["sub"]
+    email = claims.get("email", "")
+    user_id = user_id_from_google_sub(sub)
 
-    user_id = user_id_from_email(normalized)
     session.clear()
     session["user_id"] = user_id
-    session["email"] = normalized
-    session.permanent = True  # obeys PERMANENT_SESSION_LIFETIME if set
+    session["email"] = email
+    session["google_sub"] = sub  # stored for audit/debugging only
+    session.permanent = True
 
-    # Touch user.json so the directory is materialized and so a
-    # future admin / debug tool can list users without scraping dirs.
+    # Persist (or refresh) the user's record file with the verified
+    # Google identity. This is an audit trail only — never the
+    # source of truth for identity decisions.
     import datetime
+    import json
     user_dir = user_root(user_id)
     meta_path = user_dir / "user.json"
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     if meta_path.exists():
         try:
-            import json
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             meta = {}
     else:
         meta = {}
     meta["user_id"] = user_id
-    meta["email"] = normalized
+    meta["google_sub"] = sub
+    meta["email"] = email
     meta.setdefault("created_at", now)
     meta["last_seen_at"] = now
-    import json as _json
-    meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-    logger.info("Signed in user_id=%s email=%s", user_id, normalized)
-    return user_id, normalized
+    logger.info(
+        "Signed in user_id=%s google_sub=%s email=%s",
+        user_id, sub, email,
+    )
+    return user_id, email
 
 
 def sign_out() -> None:
@@ -212,7 +311,10 @@ def sign_out() -> None:
     signed in is a no-op.
     """
     if session.get("user_id"):
-        logger.info("Signed out user_id=%s", session["user_id"])
+        logger.info(
+            "Signed out user_id=%s google_sub=%s",
+            session["user_id"], session.get("google_sub"),
+        )
     session.clear()
 
 
@@ -221,15 +323,8 @@ def require_auth(view: Callable) -> Callable:
     """
     Decorator that 401s any request without a signed-in user.
 
-    Usage:
-        @app.route("/api/profile")
-        @require_auth
-        def api_get_profile():
-            user_id = current_user_id()  # safe — we know it is set
-            ...
-
     The handler can call current_user_id() and trust it to be a
-    valid hex string. If you need the email, call current_user_email().
+    valid hex string derived from a Google-verified sub claim.
     """
 
     @wraps(view)
@@ -252,10 +347,6 @@ def cleanup_expired_sessions_for_all_users() -> int:
     """
     if not USERS_ROOT.exists():
         return 0
-    # Import lazily to avoid a circular import: session_service
-    # imports Profile from models.profile, which doesn't import
-    # auth_service, so the circle is fine — but importing at module
-    # top-level would force eager evaluation. Lazy is cleaner.
     from services import session_service
 
     total = 0
@@ -268,7 +359,7 @@ def cleanup_expired_sessions_for_all_users() -> int:
             continue
         try:
             total += session_service.cleanup_expired_sessions(user_id)
-        except Exception as exc:  # noqa: BLE001 — never let cleanup block startup
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Cleanup failed for user_id=%s: %s", user_id, exc
             )

@@ -179,13 +179,14 @@ class TestRequiresTectonic:
         real PDF instead of crashing.
         """
         from models.profile import Profile, PersonalInfo
-        from services.auth_service import user_id_from_email
+        from services.auth_service import user_id_from_google_sub
 
         ss = isolated_session_service
         profile = Profile(personal_info=PersonalInfo(name="Jane Doe", email="jane@example.com"))
-        # The auto-signed-in app_client uses test@example.com — derive the
+        # The auto-signed-in app_client was signed in via a fake token
+        # with sub="default-test-sub" (see tests/conftest.py). Use the
         # matching user_id so the seeded session is visible to the route.
-        user_id = user_id_from_email("test@example.com")
+        user_id = user_id_from_google_sub("default-test-sub")
         session_id = ss.create_session(user_id, profile, {"job_description": "A job"})
         ss.update_draft(user_id, session_id, profile, {"suggestions": []})
         snapshot_id = ss.save_snapshot(user_id, session_id, "First Draft")

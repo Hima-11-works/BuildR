@@ -50,6 +50,7 @@
 
 import io
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -60,6 +61,8 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file
 from pydantic import ValidationError
 
+logger = logging.getLogger(__name__)
+
 from models.profile import Profile
 from services.storage_service import load_profile, save_profile
 from services.latex_service import render_latex
@@ -69,14 +72,14 @@ from services.resume_library import (
     rename_resume, duplicate_resume,
 )
 from services.auth_service import (
-    sign_in as auth_sign_in,
+    sign_in_with_google,
     sign_out as auth_sign_out,
     current_user_id,
     current_user_email,
     require_auth,
-    user_id_from_email,
+    user_id_from_google_sub,
     cleanup_expired_sessions_for_all_users,
-    validate_email,
+    verify_google_id_token,
 )
 
 # ── Step 1: Load environment variables from .env ─────────────
@@ -155,35 +158,25 @@ def _migrate_legacy_storage():
         )
         return
 
-    legacy_user_id = user_id_from_email("legacy-default@local")
+    # Migration under the new auth model is impossible: legacy files
+    # were keyed by the old email-derived user_id, and the new model
+    # keys by Google `sub`. We move the legacy files under a marker
+    # so they're not re-detected next start, and log a clear notice
+    # that any pre-existing user data is unrecoverable through the
+    # new auth model unless the user manually re-keys it.
     legacy_marker = _PROJECT_ROOT / "storage" / ".legacy-migrated"
-    target_user = USERS_ROOT / legacy_user_id
-    target_user.mkdir(parents=True, exist_ok=True)
-
-    moved_any = False
-    if legacy_profile.exists():
-        shutil.copy2(legacy_profile, target_user / "profile.json")
-        moved_any = True
-    if legacy_resumes.exists():
-        shutil.copytree(legacy_resumes, target_user / "resumes")
-        moved_any = True
-    if legacy_sessions.exists():
-        shutil.copytree(legacy_sessions, target_user / "sessions")
-        moved_any = True
-
-    if moved_any:
-        # Move the originals under a marker dir so they aren't
-        # re-migrated on the next start, but the user can recover
-        # from them manually if needed.
-        legacy_marker.mkdir(exist_ok=True)
-        for src in (legacy_profile, legacy_resumes, legacy_sessions):
-            if src.exists():
-                shutil.move(str(src), str(legacy_marker / src.name))
-        print(
-            f"Migrated legacy single-user storage into user_id={legacy_user_id}. "
-            f"Originals moved to {legacy_marker}. Sign in with any email — "
-            f"data under that user_id is now accessible."
-        )
+    legacy_marker.mkdir(exist_ok=True)
+    for src in (legacy_profile, legacy_resumes, legacy_sessions):
+        if src.exists():
+            shutil.move(str(src), str(legacy_marker / src.name))
+    print(
+        "Legacy single-user storage detected and relocated to "
+        f"{legacy_marker}. NOTE: under the new Google OAuth auth model, "
+        "legacy data is no longer accessible through any user account. "
+        "Sign in with Google to start a fresh workspace. "
+        "The legacy files are preserved on disk for manual recovery if "
+        "you need them."
+    )
 
 
 _PROJECT_ROOT = _Path(__file__).resolve().parent
@@ -211,28 +204,56 @@ def handle_request_too_large(e):
 
 # ── Auth endpoints (no @require_auth — these establish or tear
 #    down the session itself) ──────────────────────────────────
-@app.route("/api/auth/sign-in", methods=["POST"])
-def api_sign_in():
+@app.route("/api/auth/google", methods=["POST"])
+def api_sign_in_google():
     """
-    Sign in with an email address.
+    Verify a Google-issued ID token and establish a session.
 
-    The email IS the credential — there is no password. Anyone who
-    knows (or guesses) a user's email can sign in as them. This is
-    the model the user explicitly requested. See services/auth_service.py
-    for the security trade-off documentation.
+    SECURITY MODEL — DO NOT WEAKEN
+    ------------------------------
+    The only path to a session is a Google-signed ID token whose
+    signature passes `verify_google_id_token`. We deliberately do NOT
+    accept an email field on the request body — the previous
+    email-only design was vulnerable to "I know your email, give me
+    your data" attacks. Anyone can submit any email to this server,
+    but they cannot forge a Google-issued token whose `sub` claim
+    belongs to a Google account they don't control.
 
-    Body: {"email": "alice@example.com"}
+    Body: {"id_token": "<JWT from Google Identity Services>"}
     Returns: {"status": "ok", "user_id": "...", "email": "..."}
+
+    Status codes
+    ------------
+    200 — token verified, session established
+    400 — body missing or no id_token
+    401 — token invalid / expired / wrong audience / unverified email
+    500 — GOOGLE_CLIENT_ID not configured (operator error)
     """
     data = request.get_json(silent=True) or {}
-    email = data.get("email")
-    normalized = validate_email(email)
-    if normalized is None:
-        return jsonify({"error": "Please enter a valid email address."}), 400
+    token = data.get("id_token")
+    if not token:
+        return jsonify({"error": "An id_token is required."}), 400
+    if not isinstance(token, str):
+        return jsonify({"error": "id_token must be a string."}), 400
+
     try:
-        user_id, email = auth_sign_in(normalized)
+        user_id, email = sign_in_with_google(token)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        # Verification failed: bad signature, expired, wrong audience,
+        # unverified email, etc. We return 401 (not 400) because the
+        # request itself was well-formed — the credentials inside it
+        # were not acceptable. The error message is intentionally
+        # generic; specific failure details go to the server log only,
+        # not the response, so attackers can't probe for which field
+        # of their token was wrong.
+        logger.info("Google sign-in rejected: %s", exc)
+        return jsonify({"error": "Authentication failed."}), 401
+    except RuntimeError as exc:
+        # GOOGLE_CLIENT_ID not configured. This is an operator
+        # problem, not a user problem — log loudly.
+        logger.error("Google OAuth misconfigured: %s", exc)
+        return jsonify({"error": "Server is not configured for Google sign-in."}), 500
+
     return jsonify({"status": "ok", "user_id": user_id, "email": email})
 
 
