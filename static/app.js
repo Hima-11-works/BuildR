@@ -1922,15 +1922,14 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshIcons();
 
     // ── Theme Toggle Event Wiring ────────────────────────────
-    const themeToggle = document.getElementById("theme-toggle");
-    if (themeToggle) {
-        themeToggle.addEventListener("click", () => {
+    document.querySelectorAll(".theme-toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
             const currentTheme = document.documentElement.getAttribute("data-theme");
             const newTheme = currentTheme === "dark" ? "light" : "dark";
             document.documentElement.setAttribute("data-theme", newTheme);
             localStorage.setItem("theme", newTheme);
         });
-    }
+    });
 
     // ── Collapsible Import Section Toggle ───────────────────
     const importTrigger = document.getElementById("import-accordion-trigger");

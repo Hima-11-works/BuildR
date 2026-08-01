@@ -41,19 +41,19 @@
 
 <body class="no-transition">
 
+    <!-- Global Floating Controls (direct children of body to escape .app-container stacking context) -->
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
+        <i data-lucide="sun" class="theme-icon sun-icon"></i>
+        <i data-lucide="moon" class="theme-icon moon-icon"></i>
+    </button>
+
+    <!-- Sign Out — hidden until whoami reports authenticated -->
+    <button type="button" id="sign-out-btn" class="sign-out-btn" aria-label="Sign out" hidden>
+        <i data-lucide="log-out" class="sign-out-icon"></i>
+        <span class="sign-out-label">Sign out</span>
+    </button>
+
     <div class="app-container">
-
-        <!-- Theme Toggle Switcher -->
-        <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
-            <i data-lucide="sun" class="theme-icon sun-icon"></i>
-            <i data-lucide="moon" class="theme-icon moon-icon"></i>
-        </button>
-
-        <!-- Sign Out — hidden until whoami reports authenticated -->
-        <button type="button" id="sign-out-btn" class="sign-out-btn" aria-label="Sign out" hidden>
-            <i data-lucide="log-out" class="sign-out-icon"></i>
-            <span class="sign-out-label">Sign out</span>
-        </button>
         <!-- ═══════════════════════════════════════════════════════
          HOME VIEW
          ═══════════════════════════════════════════════════════ -->

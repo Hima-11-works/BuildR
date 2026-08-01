@@ -152,11 +152,11 @@ body:not(.no-transition) .theme-toggle {
 
 /* ── Theme Toggle Button ──────────────────────────────────── */
 .theme-toggle {
-    position: absolute;
-    top: var(--space-xl);
+    position: fixed;
+    top: var(--space-lg);
     right: var(--space-lg);
-    background: transparent;
-    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-full);
     width: 42px;
     height: 42px;
@@ -166,8 +166,10 @@ body:not(.no-transition) .theme-toggle {
     cursor: pointer;
     color: var(--text-primary);
     outline: none;
-    z-index: 10;
+    z-index: 5000;
     padding: 0;
+    box-shadow: var(--shadow-card);
+    transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .theme-toggle:hover {
