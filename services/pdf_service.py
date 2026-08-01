@@ -72,6 +72,28 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def count_pdf_pages(pdf_path) -> int:
+    """
+    Return the page count of a compiled PDF, or 1 on any failure.
+
+    Used by the Master Resume pipeline to decide whether to run a
+    one-page optimization pass. We treat unreadable PDFs as
+    "1 page" rather than "0 pages" so a transient pypdf parse
+    error never causes the optimizer to misfire on what is
+    actually a perfectly fine single-page resume.
+
+    pypdf is already a project dependency (used by
+    services/parser_service.py to extract resume text), so this
+    adds no new install footprint.
+    """
+    try:
+        from pypdf import PdfReader
+        return max(1, len(PdfReader(str(pdf_path)).pages))
+    except Exception as exc:  # noqa: BLE001 — defensive: never block resume generation on pypdf trouble
+        logger.warning("count_pdf_pages(%s) failed: %s; defaulting to 1", pdf_path, exc)
+        return 1
+
+
 # ── Custom exception for compilation failures ─────────────────
 class PdfCompilationError(Exception):
     """

@@ -297,9 +297,20 @@ def _node_to_latex(node: bs4.PageElement) -> str:
 # 4. RENDER THE FINAL .tex STRING
 # ══════════════════════════════════════════════════════════════
 
-def render_latex(profile: Profile) -> str:
+def render_latex(profile: Profile, *, compact: bool = False) -> str:
     """
     Render a complete .tex string from a Profile object.
+
+    Parameters
+    ----------
+    profile : Profile
+        The user's master or tailored profile.
+    compact : bool, default False
+        When True, the LaTeX template tightens section spacing,
+        removes the gap between itemize items, and reduces the
+        per-entry separator. Used by the Master Resume optimizer
+        when a borderline 2-page resume needs to compress to 1
+        page WITHOUT changing font sizes or cramping the layout.
 
     PIPELINE
     --------
@@ -407,6 +418,11 @@ def render_latex(profile: Profile) -> str:
     # ── Step 5: Load template and render ──────────────────────
     env = _create_latex_env()
     template = env.get_template("resume.tex")
+    # Pass `compact` through to the template; the template branches
+    # on it via \BLOCK{ if compact } / \BLOCK{ else } to apply tighter
+    # spacing when the master-resume optimizer needs to compress a
+    # 2-page resume into 1.
+    escaped_data["compact"] = bool(compact)
     tex_string = template.render(**escaped_data)
 
     return tex_string

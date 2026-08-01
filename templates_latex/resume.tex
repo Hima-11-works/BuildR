@@ -63,13 +63,18 @@
   {}                                      % before-code
   [\titlerule]                            % after-code: horizontal rule
 
-\titlespacing*{\section}{0pt}{10pt}{4pt}
+\BLOCK{ if compact }%
+\titlespacing*{\section}{0pt}{6pt}{2pt}%
+\setlist[itemize]{label=\textbullet, nosep, leftmargin=1.5em, topsep=0pt}%
+\newcommand{\entrysep}{\vspace{2pt}}%
+\BLOCK{ else }%
+\titlespacing*{\section}{0pt}{10pt}{4pt}%
+\setlist[itemize]{label=\textbullet, nosep, leftmargin=1.5em, topsep=2pt}%
+\newcommand{\entrysep}{\vspace{4pt}}%
+\BLOCK{ endif }%
 
 %% ── Remove page numbers ─────────────────────────────────────
 \pagestyle{empty}
-
-%% ── Tighter list spacing ────────────────────────────────────
-\setlist[itemize]{label=\textbullet, nosep, leftmargin=1.5em, topsep=2pt}
 
 %% ── Zero Paragraph Indentation ──────────────────────────────
 \setlength{\parindent}{0pt}
@@ -114,7 +119,7 @@
 \BLOCK{ endif }%
 \BLOCK{ if not loop.last }
 
-\vspace{4pt}
+\entrysep
 \BLOCK{ endif }%
 \BLOCK{ endfor }%
 \BLOCK{ endif }
@@ -137,7 +142,7 @@
 \end{\VAR{ exp.bullets_type }}
 \BLOCK{ endif }%
 \BLOCK{ if not loop.last }
-\vspace{4pt}
+\entrysep
 \BLOCK{ endif }%
 \BLOCK{ endfor }%
 \BLOCK{ endif }
@@ -159,7 +164,7 @@
 \end{\VAR{ proj.bullets_type }}
 \BLOCK{ endif }%
 \BLOCK{ if not loop.last }
-\vspace{4pt}
+\entrysep
 \BLOCK{ endif }%
 \BLOCK{ endfor }%
 \BLOCK{ endif }

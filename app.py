@@ -63,7 +63,8 @@ from pydantic import ValidationError
 from models.profile import Profile
 from services.storage_service import load_profile, save_profile
 from services.latex_service import render_latex
-from services.pdf_service import compile_pdf, PdfCompilationError
+from services.pdf_service import compile_pdf, PdfCompilationError, count_pdf_pages
+from services.master_optimizer import optimize_profile
 from services.resume_library import (
     save_resume, list_resumes, get_resume_path, delete_resume, delete_resumes_by_type,
     rename_resume, duplicate_resume,
@@ -520,13 +521,24 @@ def api_generate_master_resume():
     """
     Generate the master resume as a PDF for the signed-in user.
 
-    PIPELINE
-    --------
-    1. load_profile(user_id)        → Profile from this user's profile.json
-    2. render_latex()              → .tex string (escaped + templated)
-    3. compile_pdf()               → .pdf file (via Tectonic subprocess)
-    4. delete_resumes_by_type +    → user-scoped — replaces any prior
-       save_resume                   "Master" entry in this user's library
+    PIPELINE (with intelligent one-page optimization)
+    --------------------------------------------------
+    1. load_profile(user_id)             → Profile from this user's profile.json
+    2. First-pass render + compile        → page count
+       a. If 1 page → save as-is. Done.
+       b. If 2+ pages → run content optimizer, then re-render in
+          compact mode (tighter section spacing), recompile.
+       c. If the optimized version is <= the original page count
+          AND either fits on 1 page now or stayed ≤ original pages,
+          use the optimized version. The user's stored profile is
+          NOT modified.
+    3. delete_resumes_by_type + save_resume
+       → user-scoped — replaces any prior "Master" entry.
+
+    We do NOT iteratively re-optimize. If the resume is still 2
+    pages after one optimization pass, we keep the optimized
+    version (it's strictly tighter than the original) and let
+    the second page happen. Readability beats page count.
     """
     try:
         user_id = current_user_id()
@@ -541,24 +553,81 @@ def api_generate_master_resume():
                          "Please fill in at least your name before generating."
             }), 400
 
-        # ── Step 2: Render LaTeX ──────────────────────────────
+        # ── Step 2: First-pass render + compile ───────────────
         tex_string = render_latex(profile)
+        optimization_changes: list[str] = []
 
-        # ── Step 3 & 4: Compile + persist to the user's library ─
-        with _isolated_compile(tex_string) as pdf_path:
-            delete_resumes_by_type(user_id, "master")
+        # We need to capture the winning PDF bytes inside the
+        # `_isolated_compile` context (which deletes the temp dir on
+        # exit) and write them to a stable path before save_resume.
+        # Doing the bytes-to-path write OUTSIDE any context keeps
+        # save_resume on a normal file path it can read at any time.
+        final_pdf_bytes: bytes = b""
+        final_tex = tex_string
+
+        with _isolated_compile(tex_string) as first_pdf:
+            first_pages = count_pdf_pages(first_pdf)
+
+            if first_pages == 1:
+                # ── Already fits — use the first pass ─────────
+                final_pdf_bytes = first_pdf.read_bytes()
+            else:
+                # ── Multi-page — try the optimization pass ──────
+                optimized_profile, changes = optimize_profile(profile)
+                optimization_changes = changes
+
+                if not changes:
+                    final_pdf_bytes = first_pdf.read_bytes()
+                else:
+                    # Re-render in compact mode and recompile.
+                    tex_string_opt = render_latex(optimized_profile, compact=True)
+                    with _isolated_compile(tex_string_opt) as second_pdf:
+                        second_pages = count_pdf_pages(second_pdf)
+
+                        if second_pages == 1:
+                            # Won — fits on one page after optimization.
+                            final_tex = tex_string_opt
+                            final_pdf_bytes = second_pdf.read_bytes()
+                        elif second_pages <= first_pages:
+                            # Still 2+ pages, but at least not worse.
+                            # Use the optimized version anyway.
+                            final_tex = tex_string_opt
+                            final_pdf_bytes = second_pdf.read_bytes()
+                        else:
+                            # Optimization made it LONGER (shouldn't
+                            # happen, but defensive). Fall back to
+                            # the first pass.
+                            final_pdf_bytes = first_pdf.read_bytes()
+
+        # ── Step 3: Persist to the user's library ─────────────
+        # Write the captured PDF bytes to a stable temp file so
+        # save_resume has a real path to copy from. We delete the
+        # previous Master entry FIRST so a fresh master replaces any
+        # older one (matches the original behavior — see
+        # test_regenerating_master_resume_does_not_duplicate_library_entry).
+        delete_resumes_by_type(user_id, "master")
+
+        import tempfile as _tempfile
+        with _tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+            tf.write(final_pdf_bytes)
+            stable_pdf_path = _Path(tf.name)
+        try:
             resume_id = save_resume(
                 user_id=user_id,
-                tex_string=tex_string,
-                pdf_path=pdf_path,
+                tex_string=final_tex,
+                pdf_path=stable_pdf_path,
                 resume_type="master",
                 label="Master",
             )
+        finally:
+            stable_pdf_path.unlink(missing_ok=True)
 
         return jsonify({
             "status": "ok",
             "id": resume_id,
             "label": "Master",
+            "optimized": bool(optimization_changes),
+            "optimization_changes": optimization_changes,
         })
 
     except PdfCompilationError as e:
