@@ -26,6 +26,7 @@
 
 /* ── Light Mode (Cream & Black) ────────────────────────────── */
 [data-theme="light"] {
+    color-scheme: light;
     --bg-base: #EFE7DC;              /* Cozy stationery main background */
     --bg-surface: #E7DDD0;           /* Warm beige secondary background */
     --bg-card: #F4EEE6;              /* Soft cream cards/surfaces */
@@ -58,6 +59,7 @@
 
 /* ── Dark Mode (Black & Cream) ────────────────────────────── */
 [data-theme="dark"] {
+    color-scheme: dark;
     --bg-base: #121214;              /* Near-black or deep charcoal */
     --bg-surface: #1E1E22;           /* Dark surfaces */
     --bg-card: #1E1E22;
@@ -354,6 +356,29 @@ body:not(.no-transition) .theme-toggle {
 .form-group input::placeholder,
 .form-group textarea::placeholder {
     color: var(--text-muted);
+}
+
+/* ── Global Browser Autofill Overrides (Chrome, Edge, Safari, Firefox) ── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+input:autofill,
+input:autofill:hover,
+input:autofill:focus,
+input:autofill:active {
+    -webkit-box-shadow: 0 0 0px 1000px var(--bg-input) inset !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+    caret-color: var(--text-primary);
+    transition: background-color 50000s ease-in-out 0s;
+    border-color: var(--border-strong);
+}
+
+input:-webkit-autofill:focus,
+input:autofill:focus {
+    -webkit-box-shadow: 0 0 0px 1000px var(--bg-input-focus) inset !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+    border-color: var(--accent-solid);
 }
 
 .form-group textarea {
@@ -2255,15 +2280,21 @@ body.builder-active .save-bar {
     padding: var(--space-md);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
-    background-color: var(--bg-input, var(--bg-card));
+    background-color: var(--bg-input);
     color: var(--text-primary);
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .auth-input:focus {
     outline: none;
     border-color: var(--accent-solid);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+    background-color: var(--bg-input-focus);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.auth-input::placeholder {
+    color: var(--text-muted);
+    opacity: 1;
 }
 
 .auth-submit {
@@ -2271,16 +2302,16 @@ body.builder-active .save-bar {
     font-size: 1rem;
     font-weight: 600;
     padding: var(--space-md);
-    border: none;
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     background-color: var(--accent-solid);
-    color: #ffffff;
+    color: var(--text-on-accent);
     cursor: pointer;
-    transition: background-color var(--transition-fast);
+    transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
 }
 
 .auth-submit:hover {
-    background-color: var(--accent-hover, #4f46e5);
+    opacity: 0.9;
 }
 
 .auth-submit:disabled {
@@ -2289,7 +2320,7 @@ body.builder-active .save-bar {
 }
 
 .auth-error {
-    color: #ef4444;
+    color: var(--error);
     font-size: 0.9rem;
     margin: 0;
 }
@@ -2299,7 +2330,7 @@ body.builder-active .save-bar {
 }
 
 .auth-footnote {
-    color: var(--text-tertiary, var(--text-secondary));
+    color: var(--text-muted);
     font-size: 0.78rem;
     line-height: 1.5;
     margin: 0;
