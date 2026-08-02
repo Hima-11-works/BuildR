@@ -21,7 +21,7 @@ When applying for different jobs, submitting a generic resume limits your respon
 - **📄 Resume PDF/DOCX Parser**: Import existing resumes directly! Upload a PDF or DOCX file, and Gemini parses the text into the structured Profile schema.
 - **🤖 Automated AI Tailoring**: Paste a job description or provide a Job URL. BuildR scrapes and cleans the content, tailoring your profile items to match.
 - **🛡️ Anti-Fabrication Safeguards**: Uses constrained decoding via Pydantic response schemas to guarantee that the LLM only rephrases existing history and never invents/fabricates credentials.
-- **🎨 Custom LaTeX Engine**: Uses Jinja2 with custom delimiters (e.g., `\VAR{}` and `\BLOCK{}`) to avoid syntactical clashes with native LaTeX markup.
+- **🎨 Custom LaTeX Engine & Defensive Escaping**: Uses Jinja2 with custom delimiters (e.g., `\VAR{}` and `\BLOCK{}`) to avoid syntactical clashes with native LaTeX markup. Automatically normalizes Unicode characters (en/em dashes, bullets, smart quotes) and recursively escapes all user-facing data (including dictionary keys like skill categories) to prevent LaTeX compilation errors.
 - **⚡ Standalone PDF Compilation**: Uses `tectonic` to fetch missing LaTeX packages on-the-fly, compiling PDFs in seconds without requiring full, multi-gigabyte TeX distributions.
 - **📁 Resume Library**: Automatically catalogs all generated resumes (master and tailored), allowing you to download the compiled PDFs, grab the editable LaTeX source code (`.tex`), or clean up historical files.
 
@@ -34,7 +34,7 @@ When applying for different jobs, submitting a generic resume limits your respon
 - **Parsers**: [pypdf](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) & [python-docx](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) (text extraction from PDFs and Word docs)
 - **Web Scraping**: [BeautifulSoup4](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py) & `requests` (job description page cleaning)
 - **LaTeX Renderer**: [Jinja2](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) (standalone template engine env) & Tectonic CLI compiler
-- **Frontend**: Single-Page App (SPA) built using Semantic HTML5, Vanilla JavaScript ([static/app.js](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/app.js)), and Vanilla CSS ([static/style.css](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/style.css)) featuring glassmorphism elements, transitions, and fully responsive grid views
+- **Frontend**: Single-Page App (SPA) built using Semantic HTML5, Vanilla JavaScript ([static/app.js](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/app.js)), and Vanilla CSS ([static/style.css](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/style.css)) featuring glassmorphism elements, dark/light themes, and fully responsive layouts
 - **Database**: Flat-file JSON database storing your profile inside [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json)
 
 ---
@@ -53,7 +53,7 @@ BuildR/
 │   └── tailored_profile.py    # AI-safe schema mappings for Gemini API
 ├── services/                  # Business logic layers
 │   ├── ai_service.py          # Gemini configuration, prompts, and calls
-│   ├── latex_service.py       # Jinja2 environment and LaTeX escaping utilities
+│   ├── latex_service.py       # Jinja2 environment, Unicode normalization, and LaTeX escaping utilities
 │   ├── pdf_service.py         # Subprocess wrappers executing Tectonic
 │   ├── parser_service.py      # PDF & DOCX text extractors
 │   ├── scraper_service.py     # BeautifulSoup scrapers for job posting web pages
@@ -76,7 +76,7 @@ BuildR/
 *   [models/profile.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) specifies the strict [Profile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) data layout.
 *   [models/tailored_profile.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailored_profile.py) details the [TailoredProfile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailored_profile.py) schema mapping structure passed to the Gemini API.
 *   [services/ai_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) structures LLM prompt guidelines and instructs the client session.
-*   [services/latex_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) handles character escapes (e.g. converting `&` to `\&`) to ensure error-free compilation.
+*   [services/latex_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) handles two-phase Unicode normalization (smart quotes, dashes, bullets) and character escapes (e.g. converting `&` to `\&` and escaping skill category dictionary keys) to ensure error-free compilation.
 *   [services/pdf_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/pdf_service.py) spawns subprocess runs targeting the `tectonic` binary.
 *   [services/parser_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) reads text streams from uploaded PDF/DOCX files.
 *   [services/scraper_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py) requests and strips HTML clutter from external postings.
@@ -136,7 +136,7 @@ Follow these steps to configure your environment and start the application:
 
 ## 🧪 Running Tests
 
-BuildR has a `pytest` suite covering the deterministic core logic (LaTeX escaping/rendering, the AI anti-hallucination sanitizer, resume-library and session path safety, list-detection heuristics) plus Flask route tests against fully isolated storage — nothing under `tests/` touches your real `storage/` directory.
+BuildR has a 252-test `pytest` suite covering deterministic core logic (two-phase Unicode normalization, LaTeX escaping, user-facing dictionary key escaping, anti-hallucination sanitization, resume-library cataloging, and user-isolated session safety) plus Flask web API routes:
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt

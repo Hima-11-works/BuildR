@@ -104,6 +104,51 @@ _LATEX_ESCAPE_MAP: dict[str, str] = {
 _LATEX_ESCAPE_RE = re.compile("|".join(re.escape(c) for c in _LATEX_ESCAPE_MAP))
 
 
+# ── Unicode Normalization ─────────────────────────────────────
+# Common Unicode characters that users paste from Word, Google Docs,
+# or that AI models generate.  These glyphs are NOT available in the
+# T1 font encoding used by the Helvetica-based LaTeX template, so
+# Tectonic emits "Missing character" warnings or silently drops them.
+#
+# We split normalization into TWO phases:
+#
+#  1. PRE-ESCAPE: Characters that map to simple ASCII replacements
+#     (no backslashes or braces).  These are applied via str.translate()
+#     BEFORE the LaTeX special-character escape pass, so they don't
+#     interfere with escaping.
+#
+#  2. POST-ESCAPE: Characters that map to LaTeX commands containing
+#     backslashes and braces (e.g. \textbullet{}).  These are applied
+#     via re.sub() AFTER the escape pass, so the backslash and braces
+#     in the replacement text are NOT re-escaped.
+
+_UNICODE_PRE_ESCAPE_MAP: dict[str, str] = {
+    "\u2013": "--",              # en dash  → LaTeX en dash
+    "\u2014": "---",             # em dash  → LaTeX em dash
+    "\u2018": "`",              # left single smart quote
+    "\u2019": "'",              # right single smart quote / apostrophe
+    "\u201C": "``",             # left double smart quote
+    "\u201D": "''",             # right double smart quote
+    "\u2026": "...",            # horizontal ellipsis
+    "\u00A0": "~",              # non-breaking space → LaTeX NBSP
+    "\u2011": "-",              # non-breaking hyphen
+    "\u2010": "-",              # hyphen character
+    "\u2012": "-",              # figure dash
+    "\u2015": "---",            # horizontal bar
+}
+_UNICODE_PRE_ESCAPE_TABLE = str.maketrans(_UNICODE_PRE_ESCAPE_MAP)
+
+# Characters whose LaTeX replacement contains \ { or } — applied AFTER
+# the escape pass so those structural characters are not re-escaped.
+_UNICODE_POST_ESCAPE_MAP: dict[str, str] = {
+    "\u2022": r"\textbullet{}",             # bullet character
+    "\u00B7": r"\textperiodcentered{}",     # middle dot
+}
+_UNICODE_POST_ESCAPE_RE = re.compile(
+    "|".join(re.escape(c) for c in _UNICODE_POST_ESCAPE_MAP)
+)
+
+
 def escape_latex(value: str) -> str:
     """
     Escape LaTeX special characters in a string.
@@ -111,6 +156,11 @@ def escape_latex(value: str) -> str:
     This makes arbitrary user input safe to embed in a .tex file.
     Without escaping, a name like "O'Brien & Co." would cause a
     LaTeX compilation error because & is the column separator.
+
+    The function first normalizes common Unicode characters (smart
+    quotes, en/em dashes, etc.) to their LaTeX-safe equivalents,
+    then escapes the 10 LaTeX special characters, and finally
+    replaces remaining Unicode symbols with LaTeX commands.
 
     Parameters
     ----------
@@ -135,7 +185,19 @@ def escape_latex(value: str) -> str:
     # and C1 control characters (127-159) to prevent Tectonic compilation errors.
     value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", value)
 
-    return _LATEX_ESCAPE_RE.sub(lambda m: _LATEX_ESCAPE_MAP[m.group(0)], value)
+    # Phase 1: Normalize Unicode chars that map to simple ASCII
+    value = value.translate(_UNICODE_PRE_ESCAPE_TABLE)
+
+    # Phase 2: Escape the 10 LaTeX special characters
+    value = _LATEX_ESCAPE_RE.sub(lambda m: _LATEX_ESCAPE_MAP[m.group(0)], value)
+
+    # Phase 3: Replace Unicode chars that map to LaTeX commands
+    # (done AFTER escaping so \textbullet{} braces are not re-escaped)
+    value = _UNICODE_POST_ESCAPE_RE.sub(
+        lambda m: _UNICODE_POST_ESCAPE_MAP[m.group(0)], value
+    )
+
+    return value
 
 
 def _escape_recursive(obj: Any) -> Any:
@@ -361,6 +423,20 @@ def render_latex(profile: Profile, *, compact: bool = False) -> str:
 
     # ── Step 3: Escape plain text fields recursively ──────────
     escaped_data = _escape_recursive(data)
+
+    # ── Step 3b: Escape skill category names ──────────────────
+    # _escape_recursive() deliberately skips dict keys because most
+    # keys are structural field names ("personal_info", "bullets",
+    # etc.) used by Jinja2 for variable lookup — escaping those would
+    # break template rendering.  But skills.categories is special:
+    # its keys are USER-PROVIDED category names (e.g. "Frameworks &
+    # Libraries") that appear directly in the LaTeX output via
+    # \VAR{ category } in the template.  We must escape them here.
+    if "skills" in escaped_data and "categories" in escaped_data.get("skills", {}):
+        raw_cats = escaped_data["skills"]["categories"]
+        escaped_data["skills"]["categories"] = {
+            escape_latex(k): v for k, v in raw_cats.items()
+        }
 
     # ── Step 4: Convert and restore rich text fields ──────────
     # Personal info links — escape only the label (display text);
