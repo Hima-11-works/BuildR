@@ -19,11 +19,22 @@ def extract_text_from_pdf(stream: io.BytesIO) -> str:
     """
     Extract raw text from a PDF file stream using pypdf.
     """
+    # ── INSTRUMENTATION ──
+    # Logs the number of PDF pages after the parser has them loaded
+    # but before they are walked for text. Tells us whether a
+    # 200-page PDF (vs a normal 1-2 page resume) is reaching the
+    # worker.
+    from services._diagnostics import log_event
     try:
         # Lazy import: pypdf + its deps (~7 MB) load only when the
         # first resume-PDF upload is parsed.
         import pypdf
         reader = pypdf.PdfReader(stream)
+        try:
+            num_pages = len(reader.pages)
+        except Exception:  # noqa: BLE001 — pypdf can fail to count on encrypted PDFs
+            num_pages = "?"
+        log_event("pdf_pages_loaded", num_pages=num_pages)
         text_parts = []
         for page in reader.pages:
             page_text = page.extract_text()
@@ -39,11 +50,21 @@ def extract_text_from_docx(stream: io.BytesIO) -> str:
     Extract raw text from a DOCX file stream using python-docx.
     Includes text from paragraphs and tables.
     """
+    from services._diagnostics import log_event
     try:
         # Lazy import: python-docx + its deps load only when the
         # first resume-DOCX upload is parsed.
         import docx
         d = docx.Document(stream)
+        try:
+            num_paragraphs = len(d.paragraphs)
+            num_tables = len(d.tables)
+        except Exception:  # noqa: BLE001
+            num_paragraphs = "?"
+            num_tables = "?"
+        log_event("docx_structure_loaded",
+                  num_paragraphs=num_paragraphs,
+                  num_tables=num_tables)
         text_parts = []
 
         # Extract from paragraphs

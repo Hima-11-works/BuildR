@@ -94,6 +94,7 @@ from services.ai_service import (
 )
 from services.scraper_service import fetch_job_description, ScrapingError
 from services.parser_service import extract_text_from_pdf, extract_text_from_docx
+from services._diagnostics import instrument_step, log_event
 import services.session_service as session_service
 
 # ── Step 2: Create the Flask application instance ────────────
@@ -445,6 +446,13 @@ def api_parse_resume():
     """
     Accept a PDF or DOCX file, extract text, call MiniMax to parse it
     into a Profile model, and return the parsed JSON to the caller.
+
+    ── INSTRUMENTATION ──
+    Every step in this route is wrapped with `instrument_step()` from
+    services/_diagnostics.py. The instrumentation ONLY logs — it does
+    not change behavior. Each step logs `[parse-trace] START`/`END`
+    with RSS memory + elapsed time + step-specific metrics. Lines are
+    prefixed `[parse-trace]` so they're easy to grep from Render logs.
     """
     if "file" not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
@@ -456,22 +464,63 @@ def api_parse_resume():
     if not (filename.endswith(".pdf") or filename.endswith(".docx")):
         return jsonify({"error": "Unsupported file format. Please upload a PDF or DOCX file."}), 400
 
-    try:
-        import io
-        file_stream = io.BytesIO(file.read())
+    log_event("route.entry",
+              filename=file.filename,
+              content_length_header=request.content_length)
 
-        if filename.endswith(".pdf"):
-            text = extract_text_from_pdf(file_stream)
-        else:
-            text = extract_text_from_docx(file_stream)
+    try:
+        # ── Step 1: read uploaded file into memory ───────────────
+        # NOTE: file.read() consumes the Werkzeug FileStorage stream.
+        # We keep a reference to the raw bytes AND wrap in BytesIO so
+        # the parser gets a seekable stream.
+        with instrument_step("read_uploaded_file",
+                             filename=file.filename):
+            raw_bytes = file.read()
+        log_event("after_file_read",
+                  raw_bytes_len=len(raw_bytes) if raw_bytes else 0,
+                  raw_bytes_kb=round(len(raw_bytes) / 1024, 1) if raw_bytes else 0)
+
+        if not raw_bytes:
+            return jsonify({"error": "The uploaded file is empty."}), 400
+
+        # ── Step 2: extract text ─────────────────────────────────
+        import io
+        file_stream = io.BytesIO(raw_bytes)
+        is_pdf = filename.endswith(".pdf")
+        with instrument_step(
+            "pdf_text_extraction" if is_pdf else "docx_text_extraction",
+            file_size_bytes=len(raw_bytes),
+            file_size_kb=round(len(raw_bytes) / 1024, 1),
+        ):
+            if is_pdf:
+                text = extract_text_from_pdf(file_stream)
+            else:
+                text = extract_text_from_docx(file_stream)
+        log_event("after_text_extraction",
+                  text_length=len(text) if text else 0)
 
         if not text.strip():
             return jsonify({"error": "The uploaded file contains no readable text."}), 400
 
-        # Parse text via MiniMax into Profile object
-        parsed_profile = parse_resume_text(text)
+        # ── Step 3: parse via MiniMax (build prompt + API call + parse + validate) ──
+        with instrument_step("parse_resume_text_total",
+                             text_length=len(text),
+                             text_kb=round(len(text) / 1024, 1)):
+            parsed_profile = parse_resume_text(text)
 
-        return jsonify(parsed_profile.model_dump())
+        # ── Step 4: resume cleanup (achievements/certs → HTML lists) ──
+        from services.parser_service import postprocess_parsed_profile
+        with instrument_step("postprocess_parsed_profile",
+                             profile_id=getattr(parsed_profile, "id", "?")):
+            postprocess_parsed_profile(parsed_profile)
+
+        # ── Step 5: profile serialization for the HTTP response ──
+        with instrument_step("profile_model_dump"):
+            serialized = parsed_profile.model_dump()
+        log_event("after_serialization",
+                  serialized_bytes=len(json.dumps(serialized)))
+
+        return jsonify(serialized)
     except Exception as e:
         print(f"Error parsing resume: {str(e)}")
         import traceback

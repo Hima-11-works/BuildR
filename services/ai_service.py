@@ -298,37 +298,54 @@ def _chat_json(
         schema_hint_name or schema.__name__,
         temperature,
     )
-    response = client.chat.completions.create(
-        model=_MODEL,
-        messages=[
-            {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-        temperature=temperature,
-    )
+
+    # ── INSTRUMENTATION ──
+    # Inside _chat_json we split the work into two observable steps:
+    # the network round-trip (OpenAI SDK call) and the JSON parse
+    # (model_validate_json). This makes it possible to tell which
+    # one blew memory on Render.
+    from services._diagnostics import instrument_step, log_event
+    with instrument_step("openai_sdk_request",
+                         system_bytes=len(system) + len(_OUTPUT_FORMAT_INSTRUCTION),
+                         user_bytes=len(user),
+                         total_request_bytes=len(system) + len(_OUTPUT_FORMAT_INSTRUCTION) + len(user)):
+        response = client.chat.completions.create(
+            model=_MODEL,
+            messages=[
+                {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            temperature=temperature,
+        )
     raw = (response.choices[0].message.content or "")
+    log_event("after_api_response_received",
+              raw_response_bytes=len(raw) if raw else 0)
+
     if not raw.strip():
         raise RuntimeError("MiniMax returned empty content.")
 
     content = _strip_response_wrappers(raw)
 
-    # First attempt: parse the cleaned content directly. Most calls
-    # land here cleanly.
-    try:
-        return schema.model_validate_json(content)
-    except Exception as first_exc:
-        # Defense in depth: if stripping didn't yield parseable
-        # JSON, surface the cleaned content in the exception so the
-        # caller can log/display it. We re-raise so app.py still
-        # treats this as a validation failure.
-        if content != raw.strip():
-            logger.warning(
-                "MiniMax response had to be unwrapped; raw[:200]=%r cleaned[:200]=%r",
-                raw[:200],
-                content[:200],
-            )
-        raise first_exc from None
+    with instrument_step("pydantic_validation",
+                         raw_response_bytes=len(raw),
+                         cleaned_response_bytes=len(content)):
+        # First attempt: parse the cleaned content directly. Most
+        # calls land here cleanly.
+        try:
+            return schema.model_validate_json(content)
+        except Exception as first_exc:
+            # Defense in depth: if stripping didn't yield parseable
+            # JSON, surface the cleaned content in the exception so the
+            # caller can log/display it. We re-raise so app.py still
+            # treats this as a validation failure.
+            if content != raw.strip():
+                logger.warning(
+                    "MiniMax response had to be unwrapped; raw[:200]=%r cleaned[:200]=%r",
+                    raw[:200],
+                    content[:200],
+                )
+            raise first_exc from None
 
 
 def _plain(value: str | None) -> str:
@@ -846,42 +863,85 @@ def parse_resume_text(text: str) -> Profile:
     Send the raw resume text to MiniMax and parse it into a structured Profile Pydantic object.
     After parsing, list-like free-text fields (achievements, certification descriptions) are
     post-processed into semantic HTML so the rich-text editor receives properly formatted content.
+
+    ── INSTRUMENTATION ──
+    This function is broken into three instrumented steps so that
+    if /api/profile/parse OOMs on Render we can identify exactly
+    which sub-step blows up memory:
+
+      1. prompt_construction     — build system + user prompt strings
+      2. gemini_api_request      — HTTP round-trip via OpenAI SDK
+      3. pydantic_validation     — model_validate_json parse of response
+
+    Each step logs `[parse-trace] START/END` with RSS memory +
+    elapsed time + step-specific metrics. NO behavior is changed.
     """
-    schema_json = json.dumps(TailoredProfile.model_json_schema(), indent=2)
-    system_instruction = (
-        "You are an expert AI resume parser. Your job is to extract all information from the provided resume text "
-        "and return it structured exactly matching the schema. Extract all contact details (name, email, phone, links), "
-        "education, work experience, projects, skills, certifications, and achievements. Be as accurate and complete as possible, "
-        "preserving all dates, details, bullets, and tools. Do not invent any information that does not exist in the resume text.\n\n"
-        "Crucial formatting rule: Clean up any PDF extraction artifacts like raw ligatures (e.g. replace '\\ufb01' or similar raw characters with 'fi', "
-        "replace '\\ufb03' with 'ffi', replace '\\ufb02' with 'fl') and fix word spacing issues (e.g. 'JA V A' -> 'JAVA', 'F rameworks' -> 'Frameworks', "
-        "'T echnologies' -> 'Technologies'). Ensure all output strings have proper spelling, casing, and spacing.\n\n"
-        "List formatting rules (IMPORTANT):\n"
-        "- For the 'achievements' field: if the source contains multiple distinct achievements, "
-        "achievements, or bullet points, return them as separate entries joined by newlines (one achievement per line). "
-        "Do NOT collapse them into a single run-on sentence. Preserve any leading markers (e.g. '• ', '- ', '1. ') "
-        "exactly as they appear in the source so downstream formatting can detect the list type.\n"
-        "- For certification 'description' fields: apply the same rule — one point per line, preserving "
-        "original list markers if present.\n"
-        "- For experience bullets and project bullets: each bullet point must be its own separate string in the list. "
-        "Never merge multiple bullet points into one string."
-    )
+    from services._diagnostics import instrument_step, log_event
 
-    user_message = (
-        f"══ RESUME TEXT ══\n{text}\n\n"
-        f"══ RESPONSE SCHEMA (JSON Schema for TailoredProfile) ══\n"
-        f"{schema_json}\n\n"
-        f"Extract and structure the resume into the response schema."
-    )
+    # ── Step 1: prompt construction ─────────────────────────
+    with instrument_step("prompt_construction",
+                         input_text_length=len(text),
+                         input_text_kb=round(len(text) / 1024, 1)):
+        schema_json = json.dumps(TailoredProfile.model_json_schema(), indent=2)
+        system_instruction = (
+            "You are an expert AI resume parser. Your job is to extract all information from the provided resume text "
+            "and return it structured exactly matching the schema. Extract all contact details (name, email, phone, links), "
+            "education, work experience, projects, skills, certifications, and achievements. Be as accurate and complete as possible, "
+            "preserving all dates, details, bullets, and tools. Do not invent any information that does not exist in the resume text.\n\n"
+            "Crucial formatting rule: Clean up any PDF extraction artifacts like raw ligatures (e.g. replace '\\ufb01' or similar raw characters with 'fi', "
+            "replace '\\ufb03' with 'ffi', replace '\\ufb02' with 'fl') and fix word spacing issues (e.g. 'JA V A' -> 'JAVA', 'F rameworks' -> 'Frameworks', "
+            "'T echnologies' -> 'Technologies'). Ensure all output strings have proper spelling, casing, and spacing.\n\n"
+            "List formatting rules (IMPORTANT):\n"
+            "- For the 'achievements' field: if the source contains multiple distinct achievements, "
+            "achievements, or bullet points, return them as separate entries joined by newlines (one achievement per line). "
+            "Do NOT collapse them into a single run-on sentence. Preserve any leading markers (e.g. '• ', '- ', '1. ') "
+            "exactly as they appear in the source so downstream formatting can detect the list type.\n"
+            "- For certification 'description' fields: apply the same rule — one point per line, preserving "
+            "original list markers if present.\n"
+            "- For experience bullets and project bullets: each bullet point must be its own separate string in the list. "
+            "Never merge multiple bullet points into one string."
+        )
 
-    tailored = _chat_json(
-        system=system_instruction,
-        user=user_message,
-        schema=TailoredProfile,
-        temperature=0.1,  # Low temperature for highest extraction accuracy
-        schema_hint_name="TailoredProfile (parser)",
-    )
-    profile = tailored.to_profile()
+        user_message = (
+            f"══ RESUME TEXT ══\n{text}\n\n"
+            f"══ RESPONSE SCHEMA (JSON Schema for TailoredProfile) ══\n"
+            f"{schema_json}\n\n"
+            f"Extract and structure the resume into the response schema."
+        )
+
+    log_event("after_prompt_construction",
+              system_prompt_bytes=len(system_instruction),
+              user_prompt_bytes=len(user_message),
+              schema_json_bytes=len(schema_json))
+
+    # ── Step 2: MiniMax / Gemini API request ─────────────────
+    # _chat_json handles the OpenAI SDK round-trip. We can't easily
+    # separate "request send" from "response wait" from inside it
+    # without touching ai_service internals, but the END log of this
+    # step gives the total round-trip time + peak memory.
+    with instrument_step("gemini_api_request",
+                         system_prompt_bytes=len(system_instruction),
+                         user_prompt_bytes=len(user_message)):
+        tailored = _chat_json(
+            system=system_instruction,
+            user=user_message,
+            schema=TailoredProfile,
+            temperature=0.1,  # Low temperature for highest extraction accuracy
+            schema_hint_name="TailoredProfile (parser)",
+        )
+
+    log_event("after_api_response",
+              response_object_type=type(tailored).__name__)
+
+    # ── Step 3: Pydantic validation (model_validate_json already ran
+    #              inside _chat_json; this measures the to_profile() conversion) ──
+    with instrument_step("pydantic_to_profile_conversion"):
+        profile = tailored.to_profile()
+
+    log_event("after_validation",
+              profile_personal_info_name=profile.personal_info.name,
+              profile_experiences=len(profile.experience),
+              profile_projects=len(profile.projects))
 
     # Post-process rich-text fields: convert plain-text list patterns to HTML
     # so that achievements and certification descriptions render as proper lists

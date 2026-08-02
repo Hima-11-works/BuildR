@@ -25,4 +25,5 @@ requests>=2.34,<3
 beautifulsoup4>=4.15,<5
 pypdf>=6.14,<7
 python-docx>=1.2,<2
+psutil>=5.9,<7  # process-RSS readings for the /api/profile/parse trace
 gunicorn>=21.2,<24; sys_platform != "win32"  # production WSGI server (Linux only)
