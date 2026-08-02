@@ -71,7 +71,12 @@ import re
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
+
+# ── Heavy import: deferred ──────────────────────────────────────
+# `bs4` (BeautifulSoup + its html.parser) is ~5 MB at import time.
+# Used only inside `clean_html()` and `fetch_job_description()`.
+# We defer the import so the rest of the app doesn't pay the cost
+# unless a /api/scrape-job call actually happens.
 
 
 # ── Custom exception ─────────────────────────────────────────
@@ -273,6 +278,9 @@ def fetch_job_description(url: str) -> str:
     # HTML.  We then remove elements that carry navigation,
     # scripts, styles, and other boilerplate — leaving only the
     # content-bearing elements.
+    # Lazy import: bs4 + html.parser (~5 MB) load only on first
+    # /api/scrape-job call. Most requests never hit this path.
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(raw_html, "html.parser")
 
     # .decompose() removes each matched tag AND all its children

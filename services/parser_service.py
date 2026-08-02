@@ -6,8 +6,13 @@ from __future__ import annotations
 
 import io
 import re
-import pypdf
-import docx
+
+# ── Heavy imports: deferred ──────────────────────────────────
+# `pypdf` pulls in ~7 MB at import time (PDF parsing tables,
+# glyph lists, cryptography fallbacks). `python-docx` adds more.
+# Both are only used in two narrow functions, so we defer the
+# imports to first call. Routes that never parse a resume (e.g.
+# auth, profile, tailoring, library) avoid the cost entirely.
 
 
 def extract_text_from_pdf(stream: io.BytesIO) -> str:
@@ -15,6 +20,9 @@ def extract_text_from_pdf(stream: io.BytesIO) -> str:
     Extract raw text from a PDF file stream using pypdf.
     """
     try:
+        # Lazy import: pypdf + its deps (~7 MB) load only when the
+        # first resume-PDF upload is parsed.
+        import pypdf
         reader = pypdf.PdfReader(stream)
         text_parts = []
         for page in reader.pages:
@@ -32,16 +40,19 @@ def extract_text_from_docx(stream: io.BytesIO) -> str:
     Includes text from paragraphs and tables.
     """
     try:
-        doc = docx.Document(stream)
+        # Lazy import: python-docx + its deps load only when the
+        # first resume-DOCX upload is parsed.
+        import docx
+        d = docx.Document(stream)
         text_parts = []
 
         # Extract from paragraphs
-        for paragraph in doc.paragraphs:
+        for paragraph in d.paragraphs:
             if paragraph.text:
                 text_parts.append(paragraph.text)
 
         # Extract from tables
-        for table in doc.tables:
+        for table in d.tables:
             for row in table.rows:
                 row_cells = [cell.text for cell in row.cells if cell.text]
                 if row_cells:

@@ -59,9 +59,14 @@ import logging
 import re
 from typing import Optional, Tuple
 
-from bs4 import BeautifulSoup
-
 from models.profile import Profile
+
+# ── Heavy import: deferred ──────────────────────────────────────
+# `bs4` (BeautifulSoup + its html.parser) is ~5 MB at import time.
+# Used only inside `_strip_html()`. We defer so the optimizer
+# module can be imported cheaply — important because master_optimizer
+# is loaded by app.py for every Master Resume route even when no
+# optimization is needed (1-page resumes skip it entirely).
 
 
 logger = logging.getLogger(__name__)
@@ -304,6 +309,10 @@ def _cut_at_sentence_boundary(truncated: str, max_chars: int) -> str:
 
 def _strip_html(s: str) -> str:
     """Return plain text content of an HTML fragment, with leading/trailing whitespace stripped."""
+    # Lazy import: bs4 (~5 MB) loads only when this helper is
+    # actually called — i.e. when the optimizer trims a long
+    # achievements section. Most resumes skip this entirely.
+    from bs4 import BeautifulSoup
     if not s:
         return ""
     return BeautifulSoup(s, "html.parser").get_text(" ", strip=True)

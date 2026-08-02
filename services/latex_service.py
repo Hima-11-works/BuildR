@@ -54,13 +54,21 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jinja2
-import bs4
-from bs4 import BeautifulSoup
 
 from models.profile import Profile
+
+# ── Heavy import: deferred ──────────────────────────────────────
+# `bs4` (BeautifulSoup + its html.parser) is ~5 MB at import time.
+# Used only inside `html_to_latex()`, `_node_to_latex()`, and the
+# achievements handler in `render_latex()`. We defer the import to
+# first use so routes that never render a resume (auth, profile,
+# tailoring) avoid the cost.
+if TYPE_CHECKING:  # pragma: no cover — type-checkers only
+    import bs4
+    from bs4 import BeautifulSoup  # noqa: F401  (only imported for typing)
 
 
 # ── Path to the LaTeX templates directory ─────────────────────
@@ -294,27 +302,35 @@ def html_to_latex(html_str: str) -> str:
     convert its formatting tags (bold, italic, lists, links) into
     LaTeX equivalents. Non-rich text content is fully escaped.
     """
+    # Lazy import: bs4 + html.parser (~5 MB) load only on first
+    # resume render. Most requests don't trigger this path.
+    from bs4 import BeautifulSoup
+
     if not html_str:
         return ""
-    
+
     html_str = html_str.strip()
     if not html_str:
         return ""
-        
+
     soup = BeautifulSoup(html_str, "html.parser")
     result = _node_to_latex(soup)
     return result.strip()
 
 
-def _node_to_latex(node: bs4.PageElement) -> str:
+def _node_to_latex(node) -> str:
     """
     Recursively walk BS4 elements and map HTML formatting tags
     to LaTeX commands, while escaping plain text leaf nodes.
     """
+    # Lazy import: bs4's NavigableString / Tag classes are only
+    # needed when we're actually walking an HTML tree.
+    import bs4
+
     if isinstance(node, bs4.NavigableString):
         # Escaping LaTeX specials on plain text string leaf node
         return escape_latex(str(node))
-        
+
     if isinstance(node, bs4.Tag):
         name = node.name.lower()
         if name in ("strong", "b"):
@@ -479,6 +495,8 @@ def render_latex(profile: Profile, *, compact: bool = False) -> str:
 
     # Achievements
     achievements_html = rich_fields.get("achievements", "").strip()
+    # Lazy import: bs4 only loaded if achievements is non-empty.
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(achievements_html, "html.parser")
     has_text = bool(soup.get_text().strip())
     if has_text:

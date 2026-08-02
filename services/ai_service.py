@@ -83,12 +83,21 @@ import json
 import logging
 import os
 import re
-from typing import Type, TypeVar
-
-from openai import OpenAI
+from typing import TYPE_CHECKING, Type, TypeVar
 
 from models.profile import Profile
 from models.tailored_profile import TailoredProfile
+
+# ── Heavy import: deferred ──────────────────────────────────────
+# The `openai` SDK and its transitive deps (httpx, anyio, h11, httpcore,
+# jiter, tqdm, …) add ~30 MB to the process at import time — measured
+# by `tracemalloc`. We defer the import to first use inside
+# `_get_client()` so routes that don't call the LLM (auth, profile,
+# resume download, etc.) don't pay that cost. Function behavior is
+# identical: a module-level `OpenAI` symbol is still available via
+# lazy load on first call.
+if TYPE_CHECKING:  # pragma: no cover — type-checkers only
+    from openai import OpenAI  # noqa: F401  (only imported for typing)
 
 
 logger = logging.getLogger(__name__)
@@ -129,9 +138,19 @@ def _get_client() -> OpenAI:
     """
     Create the MiniMax (OpenAI-compatible) client lazily so .env
     has been loaded before MINIMAX_API_KEY is read.
+
+    The `openai` SDK is imported HERE on first call, not at module
+    load time — see the deferred-import note above the import
+    section. This keeps routes that never call the LLM (e.g. the
+    auth/profile/resume-library routes) free of the ~30 MB the
+    openai SDK + httpx + anyio stack pulls in.
     """
     global _client
     if _client is None:
+        # Lazy import: pulls openai + httpx + anyio + h11 + httpcore + jiter
+        # only on first LLM call. Measured ~30 MB saved at idle.
+        from openai import OpenAI
+
         api_key = os.getenv("MINIMAX_API_KEY")
         if not api_key:
             raise RuntimeError(
