@@ -47,11 +47,6 @@
         <i data-lucide="moon" class="theme-icon moon-icon"></i>
     </button>
 
-    <!-- Sign Out — hidden until whoami reports authenticated -->
-    <button type="button" id="sign-out-btn" class="sign-out-btn" aria-label="Sign out" hidden>
-        <i data-lucide="log-out" class="sign-out-icon"></i>
-        <span class="sign-out-label">Sign out</span>
-    </button>
 
     <div class="app-container">
         <!-- ═══════════════════════════════════════════════════════
@@ -874,39 +869,7 @@
         </div>
     </div>
 
-    <!-- ── Sign-in / Sign-up Overlay (visible until /api/auth/whoami returns authenticated) -->
-    <div id="auth-overlay" class="auth-overlay">
-        <div class="auth-card">
-            <div class="auth-tabs" role="tablist">
-                <button type="button" id="auth-tab-signin" class="auth-tab active" role="tab" aria-selected="true">Sign in</button>
-                <button type="button" id="auth-tab-signup" class="auth-tab" role="tab" aria-selected="false">Sign up</button>
-            </div>
 
-            <h2 id="auth-title" class="auth-title">Sign in to BuildR</h2>
-            <p id="auth-subtitle" class="auth-subtitle">Enter your email and password to access your resumes. Each account keeps its own private workspace.</p>
-
-            <form id="auth-form" class="auth-form" autocomplete="on">
-                <label class="auth-field">
-                    <span class="auth-label">Email address</span>
-                    <input id="auth-email" type="email" class="auth-input" name="email" placeholder="you@example.com" required autocomplete="email">
-                </label>
-                <label class="auth-field">
-                    <span class="auth-label">Password</span>
-                    <input id="auth-password" type="password" class="auth-input" name="password" placeholder="At least 8 characters" required minlength="8" autocomplete="current-password">
-                </label>
-                <button id="auth-submit-btn" type="submit" class="auth-submit">
-                    <span id="auth-submit-label">Sign in</span>
-                </button>
-                <p id="auth-error" class="auth-error" hidden></p>
-            </form>
-
-            <p class="auth-footnote">
-                Each email address is its own private account. Your password is
-                hashed (scrypt) and stored only on this server — we never see the
-                plaintext after sign-up.
-            </p>
-        </div>
-    </div>
 
     <!-- ── Toast Notification Container ────────────────────────── -->
     <div id="toast-container" class="toast-container"></div>

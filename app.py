@@ -7,25 +7,16 @@
 # This is the *single* file you run to start the web server.
 # It wires together configuration, routes, and services.
 #
-# MULTI-USER ARCHITECTURE
-# -----------------------
-# Every data-touching route is wrapped with @require_auth. The decorator
-# reads the signed session cookie, and the route handler retrieves the
-# user_id via `current_user_id()`. That user_id is threaded into every
-# service call (load_profile, save_resume, session_service.create_session,
-# etc.) so storage paths are scoped per-user.
+# SINGLE-USER MODE
+# ----------------
+# All routes operate on a single shared DEFAULT_USER_ID.  There is
+# no sign-in, sign-up, or sign-out — the app is open to anyone who
+# can reach it.
 #
-# ROUTE MAP (public)
-# ------------------
-#   GET  /                       → Serves the SPA (sign-in overlay
-#                                   renders until whoami returns true)
+# ROUTE MAP
+# ---------
+#   GET  /                       → Serves the SPA
 #   GET  /favicon.ico            → Favicon
-#   POST /api/auth/sign-in       → Establish a session for an email
-#   POST /api/auth/sign-out      → Tear down the session
-#   GET  /api/auth/whoami        → Tell the SPA who (if anyone) is signed in
-#
-# ROUTE MAP (authenticated — @require_auth)
-# ------------------------------------------
 #   GET/PUT /api/profile         → master profile (read/write)
 #   POST /api/profile/parse      → upload + AI parse of a resume file
 #   POST /api/resume/master      → generate master PDF
@@ -51,8 +42,6 @@
 import io
 import json
 import os
-import secrets
-import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path as _Path
@@ -69,18 +58,11 @@ from services.resume_library import (
     save_resume, list_resumes, get_resume_path, delete_resume, delete_resumes_by_type,
     rename_resume, duplicate_resume,
 )
-from services.auth_service import (
-    sign_in as auth_sign_in,
-    sign_up as auth_sign_up,
-    sign_out as auth_sign_out,
-    change_password as auth_change_password,
-    current_user_id,
-    current_user_email,
-    require_auth,
-    user_id_from_email,
-    cleanup_expired_sessions_for_all_users,
-    validate_email,
-)
+from services.auth_service import cleanup_expired_sessions_for_all_users
+
+# ── Single-user mode ─────────────────────────────────────────
+# Every route uses this fixed user_id — no sign-in required.
+DEFAULT_USER_ID = "default"
 
 # ── Step 1: Load environment variables from .env ─────────────
 # load_dotenv() reads the .env file in the project root and
@@ -114,84 +96,11 @@ app = Flask(__name__)
 # Flask returns a 413 automatically once this is exceeded.
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
 
-# ── Session cookie security ──────────────────────────────────
-# Flask's session cookies are cryptographically signed with this
-# key.  In production, set SECRET_KEY in your environment (or .env).
-# If not set, we generate a random key — sessions won't survive
-# server restarts, but it's safe for dev/demo usage.
-app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
-
-# Cookie hardening: JS can't read the session cookie (XSS safety),
-# cross-origin POSTs need an explicit SameSite consent, and the
-# cookie only travels over HTTPS in production (skipped in debug to
-# keep `python app.py` ergonomic).
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = not bool(int(os.getenv("FLASK_DEBUG", "0")))
-
-# ── Legacy single-user storage migration ─────────────────────
-# If a deploy is upgrading from the pre-multi-user BuildR layout
-# (storage/profile.json + storage/resumes/ at the project root),
-# copy that data into a synthetic user directory so the upgrade is
-# non-destructive. Tests can opt out via BUILDR_SKIP_LEGACY_MIGRATION=1.
-def _migrate_legacy_storage():
-    from services.auth_service import USERS_ROOT
-    if os.environ.get("BUILDR_SKIP_LEGACY_MIGRATION"):
-        return
-
-    legacy_profile = _PROJECT_ROOT / "storage" / "profile.json"
-    legacy_resumes = _PROJECT_ROOT / "storage" / "resumes"
-    legacy_sessions = _PROJECT_ROOT / "storage" / "sessions"
-
-    if not (legacy_profile.exists() or legacy_resumes.exists() or legacy_sessions.exists()):
-        return  # nothing to migrate
-
-    # If anyone already lives under storage/users/, assume the new
-    # layout is in use and don't touch the legacy files. Mixed
-    # layouts are messy and the user should clean up manually.
-    if USERS_ROOT.exists() and any(USERS_ROOT.iterdir()):
-        print(
-            "Legacy single-user storage detected at storage/profile.json "
-            "or storage/resumes/, but storage/users/ already has user "
-            "directories. Skipping migration to avoid mixing layouts. "
-            "Move old files into storage/users/<some-id>/ manually if "
-            "you want to recover them."
-        )
-        return
-
-    legacy_user_id = user_id_from_email("legacy-default@local")
-    legacy_marker = _PROJECT_ROOT / "storage" / ".legacy-migrated"
-    target_user = USERS_ROOT / legacy_user_id
-    target_user.mkdir(parents=True, exist_ok=True)
-
-    moved_any = False
-    if legacy_profile.exists():
-        shutil.copy2(legacy_profile, target_user / "profile.json")
-        moved_any = True
-    if legacy_resumes.exists():
-        shutil.copytree(legacy_resumes, target_user / "resumes")
-        moved_any = True
-    if legacy_sessions.exists():
-        shutil.copytree(legacy_sessions, target_user / "sessions")
-        moved_any = True
-
-    if moved_any:
-        # Move the originals under a marker dir so they aren't
-        # re-migrated on the next start, but the user can recover
-        # from them manually if needed.
-        legacy_marker.mkdir(exist_ok=True)
-        for src in (legacy_profile, legacy_resumes, legacy_sessions):
-            if src.exists():
-                shutil.move(str(src), str(legacy_marker / src.name))
-        print(
-            f"Migrated legacy single-user storage into user_id={legacy_user_id}. "
-            f"Originals moved to {legacy_marker}. Sign in with any email — "
-            f"data under that user_id is now accessible."
-        )
-
+# Secret key for Flask session — still needed for CSRF-safe forms
+# even though we no longer use signed auth cookies.
+app.secret_key = os.getenv("SECRET_KEY", "dev-fallback-key")
 
 _PROJECT_ROOT = _Path(__file__).resolve().parent
-_migrate_legacy_storage()
 
 # ── Startup cleanup ──────────────────────────────────────────
 # Sweep out abandoned tailoring sessions older than a week for
@@ -211,106 +120,6 @@ def handle_request_too_large(e):
     return jsonify({
         "error": "The uploaded file or request body is too large (limit: 20 MB)."
     }), 413
-
-
-# ── Auth endpoints (no @require_auth — these establish or tear
-#    down the session itself) ──────────────────────────────────
-@app.route("/api/auth/sign-up", methods=["POST"])
-def api_sign_up():
-    """
-    Create a new account and sign the caller in.
-
-    Body: {"email": "alice@example.com", "password": "<at least 8 chars>"}
-    Returns: {"status": "ok", "user_id": "...", "email": "..."}
-
-    Errors:
-      400 — email malformed / password too short
-      409 — account already exists with a password (use sign-in)
-    """
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
-    password = data.get("password")
-    try:
-        user_id, email = auth_sign_up(email, password)
-    except ValueError as exc:
-        # Distinguish "already exists" (409) from "bad input" (400)
-        # by inspecting the message — slightly hacky but the simplest
-        # way without adding a typed exception class for one case.
-        msg = str(exc)
-        status = 409 if "already exists" in msg.lower() else 400
-        return jsonify({"error": msg}), status
-    return jsonify({"status": "ok", "user_id": user_id, "email": email})
-
-
-@app.route("/api/auth/sign-in", methods=["POST"])
-def api_sign_in():
-    """
-    Verify email + password and sign the caller in.
-
-    Body: {"email": "alice@example.com", "password": "..."}
-    Returns: {"status": "ok", "user_id": "...", "email": "..."}
-
-    Errors:
-      400 — malformed email / empty password / wrong credentials
-             (we deliberately use a single generic message for the
-             wrong-password vs unknown-email case so attackers can't
-             enumerate which emails are registered)
-
-    Body: {"email": "alice@example.com", "password": "..."}
-    """
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
-    password = data.get("password")
-    try:
-        user_id, email = auth_sign_in(email, password)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"status": "ok", "user_id": user_id, "email": email})
-
-
-@app.route("/api/auth/sign-out", methods=["POST"])
-def api_sign_out():
-    """
-    Tear down the current session. Idempotent.
-    """
-    auth_sign_out()
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/auth/change-password", methods=["POST"])
-@require_auth
-def api_change_password():
-    """
-    Update the signed-in user's password.
-
-    Body: {"old_password": "...", "new_password": "..."}
-    Returns: {"status": "ok"}
-    """
-    data = request.get_json(silent=True) or {}
-    try:
-        auth_change_password(
-            data.get("old_password", ""),
-            data.get("new_password", ""),
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/auth/whoami", methods=["GET"])
-def api_whoami():
-    """
-    Tell the SPA who (if anyone) is signed in. Used on page load to
-    decide whether to render the auth overlay or the app shell.
-    """
-    uid = current_user_id()
-    if not uid:
-        return jsonify({"authenticated": False})
-    return jsonify({
-        "authenticated": True,
-        "user_id": uid,
-        "email": current_user_email(),
-    })
 
 
 # ── Step 3: Define routes ────────────────────────────────────
@@ -353,14 +162,13 @@ def favicon():
 # ──────────────────────────────────────────────────────────────
 
 @app.route("/api/profile", methods=["GET"])
-@require_auth
 def api_get_profile():
     """
     Return the current user's profile as JSON.
 
     HOW IT WORKS
     ------------
-    1. current_user_id() reads the signed session cookie.
+    1. DEFAULT_USER_ID is used as the user identifier.
     2. load_profile(user_id) reads that user's profile.json
        (or returns defaults if first run).
     3. profile.model_dump() converts the Pydantic model to a plain dict.
@@ -373,7 +181,7 @@ def api_get_profile():
         }
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         profile = load_profile(user_id)
         profile_dict = profile.model_dump()
 
@@ -390,7 +198,6 @@ def api_get_profile():
 
 
 @app.route("/api/profile", methods=["PUT"])
-@require_auth
 def api_put_profile():
     """
     Accept a JSON profile, validate it, and save it to the current
@@ -422,7 +229,7 @@ def api_put_profile():
         profile = Profile.model_validate(data)
 
         # ── Persist to disk under this user's directory ───────
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         save_profile(user_id, profile)
 
         return jsonify({"status": "ok"})
@@ -441,7 +248,6 @@ def api_put_profile():
 
 
 @app.route("/api/profile/parse", methods=["POST"])
-@require_auth
 def api_parse_resume():
     """
     Accept a PDF or DOCX file, extract text, call MiniMax to parse it
@@ -565,7 +371,6 @@ def _isolated_compile(tex_string: str):
 
 
 @app.route("/api/resume/master", methods=["POST"])
-@require_auth
 def api_generate_master_resume():
     """
     Generate the master resume as a PDF for the signed-in user.
@@ -590,7 +395,7 @@ def api_generate_master_resume():
     the second page happen. Readability beats page count.
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
 
         # ── Step 1: Load the profile ──────────────────────────
         profile = load_profile(user_id)
@@ -728,7 +533,6 @@ def api_generate_master_resume():
 # ──────────────────────────────────────────────────────────────
 
 @app.route("/api/scrape-job", methods=["POST"])
-@require_auth
 def api_scrape_job():
     """
     Scrape a job posting URL and return the raw extracted text.
@@ -756,7 +560,6 @@ def api_scrape_job():
 
 
 @app.route("/api/analyze-job", methods=["POST"])
-@require_auth
 def api_analyze_job():
     """
     Perform a lightweight analysis of the job description text using
@@ -788,7 +591,6 @@ def api_analyze_job():
 
 
 @app.route("/api/tailor/start", methods=["POST"])
-@require_auth
 def api_tailor_start():
     """
     Initializes a tailoring session for the signed-in user, calls MiniMax
@@ -813,7 +615,7 @@ def api_tailor_start():
         return jsonify({"error": "Job description is required."}), 400
 
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         profile = load_profile(user_id)
         if not profile.personal_info.name.strip():
             return jsonify({"error": "Your profile has no name. Please create a Master Resume first."}), 400
@@ -869,7 +671,6 @@ def api_tailor_start():
 
 
 @app.route("/api/tailor/chat", methods=["POST"])
-@require_auth
 def api_tailor_chat():
     """
     Accepts user instructions, calls MiniMax to refine the active draft,
@@ -879,7 +680,7 @@ def api_tailor_chat():
     if not data or "session_id" not in data or "message" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     session_id = data["session_id"]
     message = data["message"].strip()
 
@@ -932,7 +733,6 @@ def api_tailor_chat():
 
 
 @app.route("/api/tailor/snapshot", methods=["POST"])
-@require_auth
 def api_tailor_snapshot():
     """
     Saves an explicit named snapshot of the current active draft for the
@@ -942,7 +742,7 @@ def api_tailor_snapshot():
     if not data or "session_id" not in data or "name" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     session_id = data["session_id"]
     snapshot_name = data["name"].strip()
 
@@ -959,7 +759,6 @@ def api_tailor_snapshot():
 
 
 @app.route("/api/tailor/restore", methods=["POST"])
-@require_auth
 def api_tailor_restore():
     """
     Overwrites the signed-in user's active draft with a selected snapshot's data.
@@ -968,7 +767,7 @@ def api_tailor_restore():
     if not data or "session_id" not in data or "snapshot_id" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     session_id = data["session_id"]
     snapshot_id = data["snapshot_id"]
 
@@ -987,7 +786,6 @@ def api_tailor_restore():
 
 
 @app.route("/api/tailor/save", methods=["POST"])
-@require_auth
 def api_tailor_save():
     """
     Saves the signed-in user's current active draft to their Resume Library.
@@ -996,7 +794,7 @@ def api_tailor_save():
     if not data or "session_id" not in data:
         return jsonify({"error": "Missing session_id parameter."}), 400
 
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     session_id = data["session_id"]
     try:
         profile, _ = session_service.load_draft(user_id, session_id)
@@ -1033,13 +831,12 @@ def api_tailor_save():
 
 
 @app.route("/api/tailor/draft/<session_id>", methods=["GET"])
-@require_auth
 def api_tailor_get_draft(session_id):
     """
     Return the signed-in user's current active draft profile and AI metadata
     for the workspace editor.
     """
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     try:
         profile, metadata = session_service.load_draft(user_id, session_id)
         return jsonify({
@@ -1058,7 +855,6 @@ def api_tailor_get_draft(session_id):
 
 
 @app.route("/api/tailor/draft/<session_id>", methods=["PUT"])
-@require_auth
 def api_tailor_update_draft(session_id):
     """
     Accept a manually edited profile JSON from the workspace editor and save
@@ -1069,7 +865,7 @@ def api_tailor_update_draft(session_id):
     draft: the user's manual edits are persisted here, and when the AI chat
     endpoint runs next, it calls load_draft() and sees those edits.
     """
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     data = request.get_json()
     if not data or "profile" not in data:
         return jsonify({"error": "Missing profile data."}), 400
@@ -1102,7 +898,6 @@ def api_tailor_update_draft(session_id):
 
 
 @app.route("/api/tailor/download/<session_id>", methods=["POST"])
-@require_auth
 def api_tailor_download(session_id):
     """
     Generate and download a PDF from the signed-in user's latest active draft.
@@ -1116,7 +911,7 @@ def api_tailor_download(session_id):
 
     The downloaded PDF always reflects the latest state of the editor.
     """
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     try:
         profile, _ = session_service.load_draft(user_id, session_id)
         job_context = session_service.load_job_context(user_id, session_id)
@@ -1166,14 +961,13 @@ def api_tailor_download(session_id):
 
 
 @app.route("/api/tailor/preview/<session_id>/<version_type>/<version_id>", methods=["GET"])
-@require_auth
 def api_tailor_preview(session_id, version_type, version_id):
     """
     Generates the PDF preview on the fly for the signed-in user's active
     draft or snapshot, meaning we never store intermediate PDF files
     permanently on disk.
     """
-    user_id = current_user_id()
+    user_id = DEFAULT_USER_ID
     try:
         profile = None
         if version_type == "draft":
@@ -1219,7 +1013,6 @@ def api_tailor_preview(session_id, version_type, version_id):
 
 
 @app.route("/api/resume/tailored", methods=["POST"])
-@require_auth
 def api_generate_tailored_resume():
     """
     Generate a tailored resume as a PDF for the signed-in user, optimized
@@ -1265,7 +1058,7 @@ def api_generate_tailored_resume():
             }), 400
 
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
 
         # ── Step 2: Load the user's profile ───────────────────
         profile = load_profile(user_id)
@@ -1337,7 +1130,6 @@ def api_generate_tailored_resume():
 # ──────────────────────────────────────────────────────────────
 
 @app.route("/api/resumes", methods=["GET"])
-@require_auth
 def api_list_resumes():
     """
     List the signed-in user's saved resumes with their metadata.
@@ -1356,7 +1148,7 @@ def api_list_resumes():
     ]
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         resumes = list_resumes(user_id)
         return jsonify(resumes)
     except Exception as e:
@@ -1364,7 +1156,6 @@ def api_list_resumes():
 
 
 @app.route("/api/resumes/<resume_id>/pdf", methods=["GET"])
-@require_auth
 def api_download_resume_pdf(resume_id):
     """
     Download the PDF for one of the signed-in user's saved resumes.
@@ -1375,7 +1166,7 @@ def api_download_resume_pdf(resume_id):
     so a malformed id cannot reach another user's folder.
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         pdf_path = get_resume_path(user_id, resume_id, "pdf")
         return send_file(
             pdf_path,
@@ -1392,14 +1183,13 @@ def api_download_resume_pdf(resume_id):
 
 
 @app.route("/api/resumes/<resume_id>/tex", methods=["GET"])
-@require_auth
 def api_download_resume_tex(resume_id):
     """
     Download the editable .tex source for one of the signed-in user's
     saved resumes. Same safety checks as the PDF route.
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         tex_path = get_resume_path(user_id, resume_id, "tex")
         return send_file(
             tex_path,
@@ -1416,7 +1206,6 @@ def api_download_resume_tex(resume_id):
 
 
 @app.route("/api/resumes/<resume_id>", methods=["DELETE"])
-@require_auth
 def api_delete_resume(resume_id):
     """
     Delete one of the signed-in user's saved resumes and its entire folder.
@@ -1430,7 +1219,7 @@ def api_delete_resume(resume_id):
     so a malicious client cannot supply a different user_id.
     """
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         delete_resume(user_id, resume_id)
         return jsonify({"status": "ok"})
     except ValueError as e:
@@ -1442,7 +1231,6 @@ def api_delete_resume(resume_id):
 
 
 @app.route("/api/resumes/<resume_id>", methods=["PATCH"])
-@require_auth
 def api_rename_resume(resume_id):
     """
     Rename one of the signed-in user's saved resume's display label (the
@@ -1453,7 +1241,7 @@ def api_rename_resume(resume_id):
         return jsonify({"error": "Missing 'label' parameter."}), 400
 
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         meta = rename_resume(user_id, resume_id, data["label"])
         return jsonify({"status": "ok", "label": meta["label"]})
     except ValueError as e:
@@ -1465,7 +1253,6 @@ def api_rename_resume(resume_id):
 
 
 @app.route("/api/resumes/<resume_id>/duplicate", methods=["POST"])
-@require_auth
 def api_duplicate_resume(resume_id):
     """
     Duplicate one of the signed-in user's saved resumes (tex + pdf +
@@ -1473,7 +1260,7 @@ def api_duplicate_resume(resume_id):
     """
     data = request.get_json(silent=True) or {}
     try:
-        user_id = current_user_id()
+        user_id = DEFAULT_USER_ID
         new_id = duplicate_resume(user_id, resume_id, data.get("label"))
         return jsonify({"status": "ok", "id": new_id})
     except ValueError as e:

@@ -179,13 +179,12 @@ class TestRequiresTectonic:
         real PDF instead of crashing.
         """
         from models.profile import Profile, PersonalInfo
-        from services.auth_service import user_id_from_email
+        from app import DEFAULT_USER_ID
 
         ss = isolated_session_service
         profile = Profile(personal_info=PersonalInfo(name="Jane Doe", email="jane@example.com"))
-        # The auto-signed-in app_client uses test@example.com — derive the
-        # matching user_id so the seeded session is visible to the route.
-        user_id = user_id_from_email("test@example.com")
+        # The app uses DEFAULT_USER_ID for all routes in single-user mode.
+        user_id = DEFAULT_USER_ID
         session_id = ss.create_session(user_id, profile, {"job_description": "A job"})
         ss.update_draft(user_id, session_id, profile, {"suggestions": []})
         snapshot_id = ss.save_snapshot(user_id, session_id, "First Draft")
