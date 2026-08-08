@@ -1,6 +1,6 @@
 # BuildR 🚀 — Master Resume Builder & AI Tailoring Engine
 
-BuildR is a modern, developer-friendly web application designed to help job seekers maintain a single, comprehensive **Master Resume** and automatically generate **tailored, job-specific resumes** using Google Gemini. It imports and parses existing files, provides an elegant form-based editor, escapes LaTeX formatting defensively, and compiles clean, ATS-compliant PDFs using the Tectonic compiler.
+BuildR is a modern, developer-friendly web application designed to help job seekers maintain a single, comprehensive **Master Resume** and automatically generate **tailored, job-specific resumes** using MiniMax AI (`minimax-m3`). It imports and parses existing files, provides an elegant form-based editor, escapes LaTeX formatting defensively, and compiles clean, ATS-compliant PDFs using the Tectonic compiler.
 
 ---
 
@@ -17,25 +17,27 @@ When applying for different jobs, submitting a generic resume limits your respon
 
 ## ✨ Features
 
-- **✍️ Interactive Profile Editor**: A side-by-side editing layout divided into tabs: Personal Info, Work Experience, Education, Projects, Skills, Certifications, and Achievements.
-- **📄 Resume PDF/DOCX Parser**: Import existing resumes directly! Upload a PDF or DOCX file, and Gemini parses the text into the structured Profile schema.
-- **🤖 Automated AI Tailoring**: Paste a job description or provide a Job URL. BuildR scrapes and cleans the content, tailoring your profile items to match.
-- **🛡️ Anti-Fabrication Safeguards**: Uses constrained decoding via Pydantic response schemas to guarantee that the LLM only rephrases existing history and never invents/fabricates credentials.
+- **✍️ Interactive Profile Editor**: A side-by-side editing layout divided into tabs: Personal Info, Work Experience, Education, Projects, Skills, Certifications, and Achievements with integrated TipTap rich-text editing.
+- **📄 Resume PDF/DOCX Parser**: Import existing resumes directly! Upload a PDF or DOCX file, and MiniMax parses the text into the structured Profile schema.
+- **🤖 Automated AI Tailoring & Interactive Chat**: Paste a job description or provide a Job URL. BuildR scrapes and cleans the content, tailoring your profile items to match. Chat directly with the AI in real time to refine bullet points or adjust draft focus.
+- **🔍 Job Scraping & Keyword Analysis**: Automatically scrapes target job URLs and extracts key skills, technologies, and missing requirements (`keywords_not_included_list`).
+- **🛡️ Anti-Fabrication Safeguards**: Uses strict JSON schema enforcement and an automated post-generation fuzzy-matching sanitizer (`_sanitize_tailored_output`) to guarantee that the LLM only rephrases existing history and never invents/fabricates credentials.
 - **🎨 Custom LaTeX Engine & Defensive Escaping**: Uses Jinja2 with custom delimiters (e.g., `\VAR{}` and `\BLOCK{}`) to avoid syntactical clashes with native LaTeX markup. Automatically normalizes Unicode characters (en/em dashes, bullets, smart quotes) and recursively escapes all user-facing data (including dictionary keys like skill categories) to prevent LaTeX compilation errors.
-- **⚡ Standalone PDF Compilation**: Uses `tectonic` to fetch missing LaTeX packages on-the-fly, compiling PDFs in seconds without requiring full, multi-gigabyte TeX distributions.
-- **📁 Resume Library**: Automatically catalogs all generated resumes (master and tailored), allowing you to download the compiled PDFs, grab the editable LaTeX source code (`.tex`), or clean up historical files.
+- **⚡ Standalone PDF Compilation & Live Preview**: Uses `tectonic` to fetch missing LaTeX packages on-the-fly, compiling PDFs in seconds with real-time in-memory preview streaming.
+- **📸 Draft Snapshots**: Create, restore, and compare named draft snapshots during AI tailoring sessions.
+- **📁 Resume Library**: Automatically catalogs all generated resumes (master and tailored), allowing you to download the compiled PDFs, grab the editable LaTeX source code (`.tex`), rename entries, duplicate versions, or clean up historical files.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Backend**: [Flask](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/app.py) (routes & HTTP APIs), [Pydantic](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/requirements.txt) (strict model validation), `python-dotenv` (configuration loader)
-- **AI Integrations**: [google-genai SDK](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) (Gemini Developer API client using the `gemini-3.5-flash` model)
+- **Backend**: [Flask](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/app.py) (routes & HTTP APIs), [Pydantic v2](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/requirements.txt) (strict model validation), `python-dotenv` (configuration loader)
+- **AI Integrations**: [openai SDK](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) targeting MiniMax API with the `minimax-m3` model. Features deferred SDK loading for zero idle memory overhead (~30 MB saved).
 - **Parsers**: [pypdf](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) & [python-docx](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) (text extraction from PDFs and Word docs)
 - **Web Scraping**: [BeautifulSoup4](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py) & `requests` (job description page cleaning)
 - **LaTeX Renderer**: [Jinja2](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) (standalone template engine env) & Tectonic CLI compiler
-- **Frontend**: Single-Page App (SPA) built using Semantic HTML5, Vanilla JavaScript ([static/app.js](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/app.js)), and Vanilla CSS ([static/style.css](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/style.css)) featuring glassmorphism elements, dark/light themes, and fully responsive layouts
-- **Database**: Flat-file JSON database storing your profile inside [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json)
+- **Frontend**: Single-Page App (SPA) built using Semantic HTML5, Vanilla JavaScript ([static/app.js](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/app.js)), TipTap Rich Text Editor, and Vanilla CSS ([static/style.css](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/static/style.css)) featuring glassmorphism elements, dark/light themes, live PDF viewer, and responsive layouts
+- **Database**: Flat-file JSON database storing your profile inside [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json) and workspace sessions in `storage/sessions/`
 
 ---
 
@@ -45,45 +47,40 @@ Below is the directory map of the BuildR repository:
 
 ```text
 BuildR/
-├── app.py                     # Main Flask entry-point and API routing
-├── requirements.txt           # Python packages listing
+├── app.py                     # Main Flask entry-point and API routing (17 REST endpoints)
+├── requirements.txt           # Production Python packages
+├── requirements-dev.txt       # Development & testing packages (pytest)
+├── Procfile                   # Render process definition (Gunicorn)
+├── render-build.sh            # Render build script (installs pinned Tectonic v0.16.9)
+├── README.md                  # System overview and quickstart guide
+├── HANDOFF.md                 # Complete technical handoff specification
 ├── LICENSE                    # MIT License details
 ├── models/                    # Pydantic schemas and serialization models
-│   ├── profile.py             # Core Profile model definitions
-│   └── tailored_profile.py    # AI-safe schema mappings for Gemini API
+│   ├── profile.py             # Core Profile database model
+│   ├── tailored_profile.py    # AI-safe schema mappings
+│   └── tailoring_result.py    # Multi-agent output schema (profile, suggestions, stats)
 ├── services/                  # Business logic layers
-│   ├── ai_service.py          # Gemini configuration, prompts, and calls
-│   ├── latex_service.py       # Jinja2 environment, Unicode normalization, and LaTeX escaping utilities
-│   ├── pdf_service.py         # Subprocess wrappers executing Tectonic
+│   ├── ai_service.py          # MiniMax client, prompts, reasoning block sanitizer, & job analysis
+│   ├── latex_service.py       # Jinja2 env, Unicode normalization, & regex LaTeX escaper
+│   ├── pdf_service.py         # Subprocess execution wrapper for Tectonic compiler
 │   ├── parser_service.py      # PDF & DOCX text extractors
-│   ├── scraper_service.py     # BeautifulSoup scrapers for job posting web pages
-│   ├── storage_service.py     # Local file JSON database managers
-│   └── resume_library.py      # Metadata and history catalog management
+│   ├── scraper_service.py     # BeautifulSoup job posting scraper with noise stripping
+│   ├── storage_service.py     # Disk persistence for storage/profile.json
+│   ├── resume_library.py      # Metadata, history catalog, & path-traversal safety
+│   └── session_service.py     # Scratch workspace session manager (storage/sessions/)
 ├── static/                    # Frontend assets
-│   ├── app.js                 # Frontend SPA router, state manager, and forms controller
-│   └── style.css              # Custom responsive styles and color palette
-├── templates/                 # Jinja2 HTML layouts
-│   └── index.html             # Single-page app HTML view
+│   ├── app.js                 # SPA router, state manager, TipTap integration, & live PDF viewer
+│   └── style.css              # Custom responsive styles and glassmorphism design system
+├── templates/                 # HTML templates
+│   └── index.html             # Single-page application UI layout
 ├── templates_latex/           # Raw LaTeX templates
 │   └── resume.tex             # LaTeX skeleton compiled to PDF
+├── tests/                     # 102 automated unit/integration tests
 └── storage/                   # Saved master profile JSON and generated resumes
     ├── profile.json           # User profile save-state
-    └── resumes/               # Historical archives (PDF/TeX/Metadata)
+    ├── resumes/               # Cataloged output folders (PDF/TeX/Metadata)
+    └── sessions/              # Workspace session state (auto-cleaned after 7 days)
 ```
-
-### Module Breakdown:
-*   [app.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/app.py) handles HTTP requests and returns JSON/downloads.
-*   [models/profile.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) specifies the strict [Profile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) data layout.
-*   [models/tailored_profile.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailored_profile.py) details the [TailoredProfile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailored_profile.py) schema mapping structure passed to the Gemini API.
-*   [services/ai_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py) structures LLM prompt guidelines and instructs the client session.
-*   [services/latex_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/latex_service.py) handles two-phase Unicode normalization (smart quotes, dashes, bullets) and character escapes (e.g. converting `&` to `\&` and escaping skill category dictionary keys) to ensure error-free compilation.
-*   [services/pdf_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/pdf_service.py) spawns subprocess runs targeting the `tectonic` binary.
-*   [services/parser_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) reads text streams from uploaded PDF/DOCX files.
-*   [services/scraper_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py) requests and strips HTML clutter from external postings.
-*   [services/storage_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/storage_service.py) reads and validates [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json).
-*   [services/resume_library.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/resume_library.py) catalogs files compiled inside the [storage/resumes/](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/resumes) directory.
-*   [templates/index.html](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/templates/index.html) hosts the single-page application structure.
-*   [templates_latex/resume.tex](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/templates_latex/resume.tex) specifies the layout rules for generating PDFs.
 
 ---
 
@@ -96,7 +93,7 @@ To run BuildR locally, you will need:
     *   **macOS**: `brew install tectonic`
     *   **Linux**: `cargo install tectonic` or use your package manager (e.g. `sudo apt install tectonic`)
     *   **Anaconda (Cross-Platform)**: `conda install -c conda-forge tectonic`
-3. **Google Gemini API Key**: Visit the [Google AI Studio](https://aistudio.google.com/app/apikey) to generate an API key.
+3. **MiniMax API Key**: Obtain an API key from the [MiniMax Platform](https://platform.minimaxi.com/).
 
 ---
 
@@ -124,7 +121,7 @@ Follow these steps to configure your environment and start the application:
 
 3. **Install Python Dependencies**
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.txt -r requirements-dev.txt
    ```
 
 4. **Verify Tectonic is Available**
@@ -136,14 +133,13 @@ Follow these steps to configure your environment and start the application:
 
 ## 🧪 Running Tests
 
-BuildR has a 252-test `pytest` suite covering deterministic core logic (two-phase Unicode normalization, LaTeX escaping, user-facing dictionary key escaping, anti-hallucination sanitization, resume-library cataloging, and user-isolated session safety) plus Flask web API routes:
+BuildR features an extensive automated `pytest` suite covering deterministic core logic (Unicode normalization, regex LaTeX escaping, dictionary key escaping, anti-hallucination sanitization, resume-library cataloging, and workspace session management) plus Flask web API endpoints:
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
-pytest
+python -m pytest
 ```
 
-Tests tagged as requiring Tectonic (real PDF compilation) are skipped automatically if it isn't installed. No `GEMINI_API_KEY` is required — the AI-related tests exercise the anti-hallucination sanitizer function directly rather than calling the Gemini API.
+Tests tagged as requiring Tectonic (real PDF compilation) are skipped automatically if it isn't installed. No `MINIMAX_API_KEY` is required — AI tests exercise the sanitizer and schema validation functions directly without making live network requests.
 
 ---
 
@@ -152,20 +148,26 @@ Tests tagged as requiring Tectonic (real PDF compilation) are skipped automatica
 BuildR uses a `.env` file to securely retrieve settings at runtime. Copy [.env.example](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/.env.example) to `.env` in the project's root folder and fill in your key:
 
 ```env
-# Google Gemini Developer API key (required)
-GEMINI_API_KEY=your_actual_gemini_api_key_here
+# MiniMax API Key (required)
+MINIMAX_API_KEY=your_actual_minimax_api_key_here
 
-# Enable Flask's auto-reload + interactive debugger (optional, default: off).
-# Only turn this on for local development — the debugger lets anyone who can
-# reach the port run arbitrary Python. Never enable it if the server is
-# reachable from outside your own machine.
+# MiniMax Base URL (optional, default: https://api.minimax.io/v1)
+# MINIMAX_BASE_URL=https://api.minimax.io/v1
+
+# MiniMax Model Choice (optional, default: minimax-m3)
+# MINIMAX_MODEL=minimax-m3
+
+# Timeout (ms) for MiniMax API calls (optional, default: 90000)
+MINIMAX_TIMEOUT_MS=90000
+
+# Enable Flask auto-reload + interactive debugger (optional, default: 0)
 FLASK_DEBUG=1
 
 # Port the dev server listens on (optional, default: 5000)
 PORT=5000
 
-# Timeout (ms) for Gemini API calls (optional, default: 90000)
-GEMINI_TIMEOUT_MS=90000
+# Secret key for signing session cookies
+SECRET_KEY=your_secret_key_here
 ```
 
 > [!WARNING]
@@ -184,8 +186,8 @@ The server will run on [http://127.0.0.1:5000/](http://127.0.0.1:5000/).
 
 ### Step 2: Establish Your Master Profile
 Open your browser and navigate to the local address. You can build your master profile in two ways:
-*   **Resume Ingestion (Import)**: Click **Import PDF/DOCX** at the top right, upload an existing resume, and let Gemini extract the information to pre-populate the forms.
-*   **Manual Entry**: Click through the forms to fill in contact details, work history, projects, certifications, and skills.
+*   **Resume Ingestion (Import)**: Click **Import PDF/DOCX** at the top right, upload an existing resume, and let MiniMax extract the information to pre-populate the forms.
+*   **Manual Entry**: Click through the forms to fill in contact details, work history, projects, certifications, and skills with TipTap rich text formatting.
 *   **Save Progress**: Click the **Save Profile** button. The backend validates your information against [Profile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py) rules and saves the state to [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json).
 
 ### Step 3: Print Your Master Resume
@@ -194,15 +196,16 @@ Click **Generate Master PDF** under the Master Resume editor. The application ru
 ### Step 4: Tailor for a Target Role
 1. Switch to the **AI Tailoring** tab.
 2. Paste the text description of the target job role, or provide a public career posting URL.
-3. Click **Generate Tailored PDF**.
-4. Behind the scenes, the `ai_service.py` sends the job details and your master profile to Gemini. The model selects matching accomplishments, optimizes bullet descriptions to align with key criteria, and returns a tailored dataset.
-5. The application builds a customized PDF and saves it to the library.
+3. Click **Start Tailoring Workspace**.
+4. Behind the scenes, `ai_service.py` sends the job details and your master profile to MiniMax (`minimax-m3`). The model selects matching accomplishments, optimizes bullet descriptions to align with key criteria, extracts missing job keywords, and returns a structured tailored profile dataset.
+5. Review the live PDF preview, refine your draft manually or via the interactive **AI Chat**, create draft snapshots, and export your finalized resume to the catalog.
 
 ### Step 5: Manage Your Resumes
-Navigate to the **Resume Library** tab to review previous downloads. Here you can:
+Navigate to the **Resume Library** tab to review cataloged resumes. Here you can:
 *   Download compiled PDFs.
 *   Download the raw LaTeX source (`.tex`) file to make manual adjustments.
-*   Permanently delete old tailoring tests.
+*   Rename resume entries or duplicate previous versions.
+*   Permanently delete historical tailoring tests.
 
 ---
 
@@ -223,7 +226,7 @@ Set the following in the Render Dashboard under **Environment**:
 
 | Variable | Description |
 |---|---|
-| `GEMINI_API_KEY` | Your Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey)) |
+| `MINIMAX_API_KEY` | Your MiniMax API key ([get one here](https://platform.minimaxi.com/)) |
 
 ### How Tectonic is Installed
 
@@ -256,6 +259,7 @@ Copyright (c) 2026 Himanshi Saxena.
 
 - [ ] **Dynamic Layout Templates**: Let users choose between various styles (e.g., standard academic, modern minimalist, two-column layouts).
 - [ ] **Direct DOCX Export**: Support downloading tailored resumes as Microsoft Word files.
-- [ ] **Keywords Matching Analysis**: Calculate and display an ATS fit score detailing how well the tailored resume aligns with the target job posting.
-- [ ] **Multi-User Capabilities**: Add user registration, authorization, and cloud databases (e.g., PostgreSQL/SQLite) instead of single-user local file storage.
+- [x] **Keywords Matching & Missing Skill Analysis**: Automated extraction of target job skills and missing requirements tracking (`keywords_not_included_list`).
+- [ ] **Multi-User Capabilities**: Add user authentication with database persistence (e.g., PostgreSQL/SQLite) instead of single-user local file storage.
 - [ ] **Automated Syncing**: Integrate directly with platforms like LinkedIn to sync profile updates.
+
