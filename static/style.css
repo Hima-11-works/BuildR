@@ -987,25 +987,25 @@ input:autofill:focus {
 .rich-editor-wrapper {
     display: flex;
     flex-direction: column;
-    background: var(--bg-input);
-    border: 1px solid var(--border-subtle);
+    background: transparent;
+    border: none;
     border-radius: var(--radius-sm);
     overflow: visible; /* Required so dropdown is not clipped */
     transition: all var(--transition-fast);
 }
 
 .rich-editor-wrapper:focus-within {
-    background: var(--bg-input-focus);
-    border-color: var(--accent-solid);
-    box-shadow: 0 0 0 2px var(--accent-glow);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
 }
 
 .rich-editor-toolbar {
     display: flex;
     gap: 4px;
-    background: var(--bg-surface);
-    padding: 4px 6px;
-    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
+    padding: 0 0 var(--space-xs) 0;
+    border-bottom: none;
     align-items: center;
     user-select: none;
     position: relative;
@@ -1141,19 +1141,55 @@ input:autofill:focus {
 }
 
 .rich-editor-content {
-    padding: var(--space-sm) var(--space-md);
-    min-height: 100px;
-    outline: none;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.85rem;
+    color: var(--text-primary);
     font-family: inherit;
     font-size: 0.9rem;
-    color: var(--text-primary);
     line-height: 1.5;
-    background: transparent;
+    transition: background-color var(--transition-fast),
+                border-color var(--transition-fast),
+                box-shadow var(--transition-fast);
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+    height: 120px;
+    overflow-y: auto;
+}
+
+.rich-editor-content:focus-within {
+    background: var(--bg-input-focus);
+    border-color: var(--accent-solid);
+    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .rich-editor-content .ProseMirror {
-    outline: none;
-    min-height: 100px;
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 100%;
+    width: 100% !important;
+    display: block !important;
+}
+
+.rich-editor-content [contenteditable="true"],
+.rich-editor-content .ProseMirror[contenteditable="true"],
+.rich-editor-content .ProseMirror[contenteditable="true"]:focus,
+.rich-editor-content .ProseMirror[contenteditable="true"]:hover {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
 }
 
 /* Style list items inside TipTap */
