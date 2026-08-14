@@ -1,3 +1,5 @@
+#dont be surprised with so many comments in the code...this was my learnning space hence the greenery :))
+
 # ──────────────────────────────────────────────────────────────
 # services/__init__.py
 # ──────────────────────────────────────────────────────────────

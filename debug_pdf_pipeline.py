@@ -34,7 +34,7 @@ def test_latex_rendering():
     print("STEP 1: Loading profile")
     print(DIVIDER)
     
-    profile = load_profile()
+    profile = load_profile("default")
     print(f"  [OK] Profile loaded: {profile.personal_info.name}")
     print(f"  [OK] Email: {profile.personal_info.email}")
     print(f"  [OK] Education entries: {len(profile.education)}")
@@ -131,8 +131,9 @@ def test_flask_endpoints():
         data = resp.get_json() if resp.content_type and "json" in resp.content_type else resp.data
         print(f"  ✗ Error response: {data}")
     
-    # Test tailored download if a session exists  
-    from services.session_service import SESSIONS_DIR
+    # Test tailored download if a session exists
+    from services.auth_service import USERS_ROOT
+    SESSIONS_DIR = USERS_ROOT / "default" / "sessions"
     sessions = [d.name for d in SESSIONS_DIR.iterdir() if d.is_dir()] if SESSIONS_DIR.exists() else []
     
     if sessions:
