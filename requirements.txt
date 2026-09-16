@@ -9,7 +9,7 @@
 #                    We'll use it to define Resume / Experience / Education models.
 #   python-dotenv  – Reads .env files so secrets (API keys) stay out of code.
 #   openai         – Official OpenAI Python SDK. We use its chat.completions
-#                    endpoint against MiniMax's OpenAI-compatible base URL.
+#                    endpoint against Google Gemini's OpenAI-compatible base URL.
 #   jinja2         – Templating engine (Flask bundles it, but we also use it
 #                    stand-alone to render LaTeX templates).
 #   requests       – HTTP client for fetching external resources (job postings, etc.).

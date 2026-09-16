@@ -15,8 +15,8 @@ Welcome to **BuildR**! This document serves as the comprehensive technical speci
    - Document rendering is completely decoupled from content storage: LaTeX templates transform validated Pydantic profile objects into clean, ATS-optimized PDFs.
 
 2. **The "AI Decides Content, Code Renders Document" Paradigm**:
-   - The LLM (MiniMax AI via `openai` SDK) is **never** asked to generate raw LaTeX strings. Asking LLMs to generate LaTeX directly leads to unescaped syntax errors, compilation crashes, and broken layouts.
-   - Instead, MiniMax is constrained via **Pydantic Response Schemas** and **Constrained Decoding** to emit structured JSON containing only item selection, reordering, and bullet rephrasing.
+   - The LLM (Google Gemini via `openai` SDK, running `gemini-2.5-flash`) is **never** asked to generate raw LaTeX strings. Asking LLMs to generate LaTeX directly leads to unescaped syntax errors, compilation crashes, and broken layouts.
+   - Instead, Gemini is constrained via **Pydantic Response Schemas** and **Constrained Decoding** to emit structured JSON containing only item selection, reordering, and bullet rephrasing.
    - Python code owns all escaping, Jinja2 templating, and LaTeX compilation via the **Tectonic** CLI.
 
 3. **Strict Anti-Fabrication Safeguards**:
@@ -50,7 +50,7 @@ BuildR/
 │   └── tailoring_result.py     # Multi-agent output (profile, suggestions, stats, insights)
 │
 ├── services/                   # Modular business logic layers
-│   ├── ai_service.py           # MiniMax API client, prompts, reasoning block sanitizer, job analysis
+│   ├── ai_service.py           # Gemini API client, prompts, reasoning block sanitizer, job analysis
 │   ├── latex_service.py        # Jinja2 environment, custom delimiters, single-pass regex escaper, HTML-to-LaTeX
 │   ├── pdf_service.py          # Subprocess execution wrapper for Tectonic CLI compiler
 │   ├── parser_service.py       # PDF/DOCX text extraction and text-to-HTML formatting
@@ -117,7 +117,7 @@ flowchart TD
     end
 
     subgraph LLM ["External / CLI Engines"]
-        MiniMax[MiniMax API minimax-m3]
+        Gemini[Google Gemini API gemini-2.5-flash]
         Tectonic[Tectonic LaTeX Compiler]
     end
 
@@ -137,7 +137,7 @@ flowchart TD
 
     ParseAPI --> ParserSvc
     ParseAPI --> AISvc
-    AISvc -->|Response Schema| MiniMax
+    AISvc -->|Response Schema| Gemini
 
     TailorAPI --> SessSvc
     TailorAPI --> AISvc
@@ -161,7 +161,7 @@ flowchart TD
 ### 1. Master Profile Ingestion & Persistence Pipeline
 1. **User Action**: The user either uploads an existing PDF/DOCX resume or manually enters data into the form tabs.
 2. **Text Extraction**: If uploaded, [services/parser_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/parser_service.py) extracts raw text via `pypdf` or `python-docx`.
-3. **AI Parsing**: [parse_resume_text()](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py#L653-L700) passes raw text to MiniMax with `response_schema=TailoredProfile` to structure contact details, work history, education, projects, skills, certifications, and achievements.
+3. **AI Parsing**: [parse_resume_text()](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/ai_service.py#L653-L700) passes raw text to Gemini with `response_schema=TailoredProfile` to structure contact details, work history, education, projects, skills, certifications, and achievements.
 4. **List Formatting**: `postprocess_parsed_profile()` converts plain-text list patterns into semantic HTML (`<ul><li>...</li></ul>`) so TipTap rich-text fields populate cleanly.
 5. **Validation & Storage**: Incoming profile JSON is validated against the [Profile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/profile.py#L309-L374) Pydantic model and persisted to disk at [storage/profile.json](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/storage/profile.json) by `save_profile()`.
 
@@ -178,7 +178,7 @@ flowchart TD
 ### 3. AI Tailoring Workspace Pipeline (v2 Workspace Flow)
 1. **Initialization**: The user inputs a job description (or URL scraped by [services/scraper_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py)) and tailoring preferences.
 2. **Session Creation**: `session_service.create_session()` creates a unique workspace folder in [storage/sessions/<session_id>/](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/session_service.py).
-3. **LLM Tailoring**: `tailor_resume_v2()` sends the Master Profile JSON and Job Description to MiniMax (`minimax-m3`) with structured response schema [TailoringResult](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailoring_result.py#L26-L33).
+3. **LLM Tailoring**: `tailor_resume_v2()` sends the Master Profile JSON and Job Description to Gemini (`gemini-2.5-flash`) with structured response schema [TailoringResult](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailoring_result.py#L26-L33).
 4. **Anti-Hallucination Sanitization**: `_sanitize_tailored_output()` verifies the response:
    - Canonical skill matching (`_canon_skill()`) checks if skill strings match the Master Profile.
    - Any invented technologies, roles, companies, or metrics are silently stripped.
@@ -272,17 +272,17 @@ def escape_latex(value: str) -> str:
 The application uses `python-dotenv` to load environment variables from `.env` at startup in `app.py`:
 
 ```env
-# MiniMax API key (Required)
-MINIMAX_API_KEY=your_actual_minimax_api_key_here
+# Google Gemini API key (Required, with fallback to GOOGLE_API_KEY)
+GEMINI_API_KEY=your_actual_gemini_api_key_here
 
-# MiniMax base URL (Optional, default: https://api.minimax.io/v1)
-# MINIMAX_BASE_URL=https://api.minimax.io/v1
+# Gemini base URL (Optional, default: https://generativelanguage.googleapis.com/v1beta/openai/)
+# GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 
-# MiniMax model choice (Optional, default: minimax-m3)
-# MINIMAX_MODEL=minimax-m3
+# Gemini model choice (Optional, default: gemini-2.5-flash)
+# GEMINI_MODEL=gemini-2.5-flash
 
-# MiniMax API call timeout in milliseconds (Default: 90000)
-MINIMAX_TIMEOUT_MS=90000
+# Gemini API call timeout in milliseconds (Default: 90000)
+GEMINI_TIMEOUT_MS=90000
 
 # Enable Flask auto-reload + interactive debugger (Default: 0 / False)
 FLASK_DEBUG=1
@@ -339,7 +339,7 @@ Access the application in your browser at `http://127.0.0.1:5000/`.
 
 ## 🧪 Running Tests & Verification
 
-BuildR features a 102-test pytest suite that covers all core modules, routing endpoints, sanitization rules, and LaTeX rendering logic.
+BuildR features a 180-test pytest suite that covers all core modules, routing endpoints, sanitization rules, and LaTeX rendering logic.
 
 ```bash
 # Execute full test suite
@@ -347,7 +347,7 @@ BuildR features a 102-test pytest suite that covers all core modules, routing en
 ```
 
 > [!NOTE]
-> Tests that perform real PDF compilation with Tectonic are automatically skipped if the `tectonic` binary is not found on the system. Tests involving MiniMax API logic mock or exercise the sanitizer functions directly, so no live API calls are made during `pytest`.
+> Tests that perform real PDF compilation with Tectonic are automatically skipped if the `tectonic` binary is not found on the system. Tests involving AI API logic mock or exercise the sanitizer functions directly, so no live API calls are made during `pytest`.
 
 ---
 
@@ -358,7 +358,7 @@ BuildR is pre-configured for deployment as a Python Web Service on **Render**.
 ### Deployment Settings
 - **Build Command**: `./render-build.sh`
 - **Start Command**: `gunicorn --bind 0.0.0.0:$PORT app:app` (defined in [Procfile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/Procfile))
-- **Environment Variables**: Set `MINIMAX_API_KEY` in the Render dashboard.
+- **Environment Variables**: Set `GEMINI_API_KEY` in the Render dashboard.
 
 ### How Tectonic Works on Render
 [render-build.sh](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/render-build.sh) downloads a pinned release of Tectonic (v0.16.9) directly from GitHub Releases and places the executable binary at `$HOME/tectonic`.

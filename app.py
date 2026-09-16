@@ -250,7 +250,7 @@ def api_put_profile():
 @app.route("/api/profile/parse", methods=["POST"])
 def api_parse_resume():
     """
-    Accept a PDF or DOCX file, extract text, call MiniMax to parse it
+    Accept a PDF or DOCX file, extract text, call Gemini to parse it
     into a Profile model, and return the parsed JSON to the caller.
 
     ── INSTRUMENTATION ──
@@ -308,7 +308,7 @@ def api_parse_resume():
         if not text.strip():
             return jsonify({"error": "The uploaded file contains no readable text."}), 400
 
-        # ── Step 3: parse via MiniMax (build prompt + API call + parse + validate) ──
+        # ── Step 3: parse via Gemini (build prompt + API call + parse + validate) ──
         with instrument_step("parse_resume_text_total",
                              text_length=len(text),
                              text_kb=round(len(text) / 1024, 1)):
@@ -563,7 +563,7 @@ def api_scrape_job():
 def api_analyze_job():
     """
     Perform a lightweight analysis of the job description text using
-    MiniMax to extract critical skills and keywords.
+    Gemini to extract critical skills and keywords.
     """
     data = request.get_json()
     if not data or "job_description" not in data:
@@ -593,7 +593,7 @@ def api_analyze_job():
 @app.route("/api/tailor/start", methods=["POST"])
 def api_tailor_start():
     """
-    Initializes a tailoring session for the signed-in user, calls MiniMax
+    Initializes a tailoring session for the signed-in user, calls Gemini
     for the initial tailoring, and saves it to the user's session folder.
     """
     data = request.get_json()
@@ -637,7 +637,7 @@ def api_tailor_start():
         }
         session_id = session_service.create_session(user_id, profile, job_context)
 
-        # Call MiniMax tailoring v2
+        # Call Gemini tailoring v2
         tailoring_result = tailor_resume_v2(profile, job_description, preferences)
 
         # Save to this user's session active draft folder
@@ -673,7 +673,7 @@ def api_tailor_start():
 @app.route("/api/tailor/chat", methods=["POST"])
 def api_tailor_chat():
     """
-    Accepts user instructions, calls MiniMax to refine the active draft,
+    Accepts user instructions, calls Gemini to refine the active draft,
     and updates the active draft files for the signed-in user.
     """
     data = request.get_json()
@@ -690,7 +690,7 @@ def api_tailor_chat():
         job_context = session_service.load_job_context(user_id, session_id)
         chat_history = session_service.load_chat_history(user_id, session_id)
 
-        # Call MiniMax chat refinement
+        # Call Gemini chat refinement
         tailoring_result = chat_tailor_resume(
             master_profile=master_profile,
             active_profile=active_profile,
@@ -1033,7 +1033,7 @@ def api_generate_tailored_resume():
     --------
     1. Parse the job description from the request body (text or URL).
     2. Load the user's saved profile from disk.
-    3. Send both to MiniMax → get back a TailoredProfile (JSON).
+    3. Send both to Gemini → get back a TailoredProfile (JSON).
     4. Convert TailoredProfile → Profile (for rendering).
     5. Render LaTeX → compile PDF → save to user's library.
     """
@@ -1070,7 +1070,7 @@ def api_generate_tailored_resume():
                          "Please fill in your profile before tailoring."
             }), 400
 
-        # ── Step 3: Call MiniMax for tailoring ─────────────────
+        # ── Step 3: Call Gemini for tailoring ─────────────────
         tailored = tailor_resume(profile, job_description)
 
         # ── Step 4: Convert to Profile for rendering ─────────

@@ -31,7 +31,7 @@ Browser (vanilla JS SPA, TipTap, in-browser PDF viewer)
         v
 app.py              Flask + REST routes
         |
-        +-- services/ai_service.py     MiniMax client + anti-fabrication sanitizer
+        +-- services/ai_service.py     Gemini client + anti-fabrication sanitizer
         +-- services/latex_service.py   Jinja2 env, Unicode normalize, LaTeX escape
         +-- services/pdf_service.py     Tectonic subprocess wrapper + page counter
         +-- services/parser_service.py  pypdf / python-docx extractors
@@ -56,7 +56,7 @@ document.
 - Python 3.10+
 - [Tectonic](https://tectonic-typesetting.github.io/) LaTeX compiler on
   PATH or discoverable in the project tree
-- A MiniMax API key
+- A Google Gemini API key
 
 ## Install
 
@@ -67,7 +67,7 @@ python -m venv env
 source env/bin/activate   # Windows: .\env\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env
-# set MINIMAX_API_KEY in .env
+# set GEMINI_API_KEY in .env
 ```
 
 ## Run
@@ -91,10 +91,10 @@ and schema validation directly.
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `MINIMAX_API_KEY` | yes | — | API key |
-| `MINIMAX_BASE_URL` | no | `https://api.minimax.io/v1` | Override for self-hosted |
-| `MINIMAX_MODEL` | no | `minimax-m3` | Model name |
-| `MINIMAX_TIMEOUT_MS` | no | `90000` | Per-request HTTP timeout |
+| `GEMINI_API_KEY` | yes | — | Primary API key (fallback: `GOOGLE_API_KEY`) |
+| `GEMINI_BASE_URL` | no | `https://generativelanguage.googleapis.com/v1beta/openai/` | Google OpenAI-compatible endpoint |
+| `GEMINI_MODEL` | no | `gemini-2.5-flash` | Model name |
+| `GEMINI_TIMEOUT_MS` | no | `90000` | Per-request HTTP timeout |
 | `FLASK_DEBUG` | no | `0` | `1` for dev auto-reload |
 | `PORT` | no | `5000` | Dev server port |
 
@@ -126,7 +126,7 @@ Render settings:
 
 - Build: `./render-build.sh`
 - Start: from `Procfile`
-- Env: `MINIMAX_API_KEY`
+- Env: `GEMINI_API_KEY`
 
 Gunicorn is pinned to one worker / one thread. Tectonic's first compile
 on a fresh deploy may take 30-60 s longer than usual as it fetches

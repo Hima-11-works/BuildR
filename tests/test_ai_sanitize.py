@@ -18,6 +18,10 @@ from services.ai_service import (
     _canon_skill,
     _skills_equivalent,
     _strip_response_wrappers,
+    _get_api_key,
+    _get_base_url,
+    _get_model,
+    _get_timeout_ms,
 )
 
 
@@ -255,3 +259,63 @@ class TestStripResponseWrappers:
     def test_handles_empty_input(self):
         assert _strip_response_wrappers("") == ""
         assert _strip_response_wrappers("   \n  ") == "   \n  ".strip()
+
+
+class TestGeminiConfiguration:
+    """Test resolution of Gemini configuration and backwards compatibility with fallback env vars."""
+
+    def test_gemini_api_key_primary(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-primary-key")
+        monkeypatch.setenv("OPENCODE_API_KEY", "opencode-fallback-key")
+        monkeypatch.setenv("MINIMAX_API_KEY", "minimax-fallback-key")
+        assert _get_api_key() == "gemini-primary-key"
+
+    def test_google_api_key_secondary(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "google-secondary-key")
+        assert _get_api_key() == "google-secondary-key"
+
+    def test_opencode_api_key_fallback(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("OPENCODE_API_KEY", "opencode-fallback-key")
+        assert _get_api_key() == "opencode-fallback-key"
+
+    def test_missing_api_key_raises_runtime_error(self, monkeypatch):
+        import pytest
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="GEMINI_API_KEY is not set"):
+            _get_api_key()
+
+    def test_gemini_base_url_default_and_override(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_BASE_URL", raising=False)
+        monkeypatch.delenv("GOOGLE_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENCODE_BASE_URL", raising=False)
+        monkeypatch.delenv("MINIMAX_BASE_URL", raising=False)
+        assert _get_base_url() == "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+        monkeypatch.setenv("GEMINI_BASE_URL", "https://custom.endpoint.com/v1")
+        assert _get_base_url() == "https://custom.endpoint.com/v1"
+
+    def test_gemini_model_default_and_override(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_MODEL", raising=False)
+        monkeypatch.delenv("GOOGLE_MODEL", raising=False)
+        monkeypatch.delenv("OPENCODE_MODEL", raising=False)
+        monkeypatch.delenv("MINIMAX_MODEL", raising=False)
+        assert _get_model() == "gemini-2.5-flash"
+
+        monkeypatch.setenv("GEMINI_MODEL", "gemini-1.5-pro")
+        assert _get_model() == "gemini-1.5-pro"
+
+    def test_gemini_timeout_resolution(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("GOOGLE_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("OPENCODE_TIMEOUT_MS", raising=False)
+        monkeypatch.delenv("MINIMAX_TIMEOUT_MS", raising=False)
+        assert _get_timeout_ms() == 90000
+
+        monkeypatch.setenv("GEMINI_TIMEOUT_MS", "45000")
+        assert _get_timeout_ms() == 45000

@@ -4,7 +4,7 @@
 # services/__init__.py
 # ──────────────────────────────────────────────────────────────
 # This package holds business-logic services:
-#   • ai_service.py      — Talks to the MiniMax API (OpenAI-compatible)
+#   • ai_service.py      — Talks to the Google Gemini API (OpenAI-compatible)
 #   • scraper_service.py — Fetches & parses job postings
 #   • latex_service.py   — Renders LaTeX and compiles to PDF
 #   • pdf_service.py     — Wraps the Tectonic CLI

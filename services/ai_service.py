@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# services/ai_service.py — MiniMax-powered resume tailoring
+# services/ai_service.py — Gemini-powered resume tailoring
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
@@ -11,22 +11,22 @@
 #   • tailor_resume_v2(profile, job_description, preferences)
 #   • chat_tailor_resume(master, active, jd, message, history)
 #
-# They all send the user's profile + a job description to MiniMax
-# via an OpenAI-compatible chat-completions endpoint, and receive
+# They all send the user's profile + a job description to Google Gemini
+# via Google's OpenAI-compatible chat-completions endpoint, and receive
 # a structured JSON response describing which items to include
 # and how to rewrite bullets for maximum relevance.
 #
 # HOW STRUCTURED OUTPUT WORKS
 # ───────────────────────────
 # We use response_format={"type": "json_object"} so the model is
-# instructed (and MiniMax-side constrained) to emit only valid
+# instructed (and model-side constrained) to emit only valid
 # JSON. The flow is:
 #
 #   1. The system prompt says "respond with strict JSON in the
 #      schema described in the user message", and we hand the
 #      model the target Pydantic schema as a JSON-Schema dict in
 #      the user message so it knows the exact field shape.
-#   2. MiniMax returns a JSON string in the assistant message.
+#   2. Gemini returns a JSON string in the assistant message.
 #   3. We parse with `schema.model_validate_json(...)`, which:
 #        - decodes JSON,
 #        - validates types and required fields via Pydantic,
@@ -103,41 +103,84 @@ if TYPE_CHECKING:  # pragma: no cover — type-checkers only
 logger = logging.getLogger(__name__)
 
 
-# ── Initialize the MiniMax client ─────────────────────────────
-# The client reads MINIMAX_API_KEY from the environment.
-# load_dotenv() in app.py has already injected .env values into
-# os.environ by the time this module is imported.
+# ── Initialize the Gemini client ─────────────────────────────
+# The client reads GEMINI_API_KEY (or GOOGLE_API_KEY, with fallback to
+# OPENCODE_API_KEY / MINIMAX_API_KEY) from the environment. load_dotenv()
+# in app.py has already injected .env values into os.environ by the time
+# this module is imported.
 #
-# The MiniMax API is OpenAI-compatible, so we use the official
-# `openai` SDK with a custom base_url. Base URL is itself
-# configurable via MINIMAX_BASE_URL — defaults to MiniMax's
-# public endpoint.
+# Google Gemini exposes an official OpenAI-compatible API gateway,
+# so we use the official `openai` SDK with a custom base_url. Base URL is
+# configurable via GEMINI_BASE_URL — defaults to:
+# https://generativelanguage.googleapis.com/v1beta/openai/
 #
 # WHY A MODULE-LEVEL CLIENT?
 # Creating the client once at import time means every call to
-# tailor_resume() reuses the same HTTP session.  This is both
+# tailor_resume() reuses the same HTTP session. This is both
 # faster (no repeated TLS handshakes) and cleaner than passing
 # the key around.
 # ──────────────────────────────────────────────────────────────
 
-_DEFAULT_BASE_URL = "https://api.minimax.io/v1"
+_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+_DEFAULT_MODEL = "gemini-2.5-flash"
+_DEFAULT_TIMEOUT_MS = 90_000
 
 _client: OpenAI | None = None
 
-# ── Request timeout ──────────────────────────────────────────
-# Without an explicit timeout, a hung MiniMax call blocks the
-# Flask request thread indefinitely — on the single-threaded dev
-# server that stalls the whole app. 90s comfortably covers normal
-# tailoring calls (which send a full profile + job description)
-# while still failing fast if the API is unreachable. Configurable
-# via MINIMAX_TIMEOUT_MS for slower connections.
-_DEFAULT_TIMEOUT_MS = 90_000
+
+def _get_api_key() -> str:
+    key = (
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("OPENCODE_API_KEY")
+        or os.getenv("MINIMAX_API_KEY")
+    )
+    if not key:
+        raise RuntimeError(
+            "GEMINI_API_KEY is not set. Add it to your .env file."
+        )
+    return key
+
+
+def _get_base_url() -> str:
+    return (
+        os.getenv("GEMINI_BASE_URL")
+        or os.getenv("GOOGLE_BASE_URL")
+        or os.getenv("OPENCODE_BASE_URL")
+        or os.getenv("MINIMAX_BASE_URL")
+        or _DEFAULT_BASE_URL
+    )
+
+
+def _get_timeout_ms() -> int:
+    timeout_raw = (
+        os.getenv("GEMINI_TIMEOUT_MS")
+        or os.getenv("GOOGLE_TIMEOUT_MS")
+        or os.getenv("OPENCODE_TIMEOUT_MS")
+        or os.getenv("MINIMAX_TIMEOUT_MS")
+    )
+    if timeout_raw:
+        try:
+            return int(timeout_raw)
+        except ValueError:
+            pass
+    return _DEFAULT_TIMEOUT_MS
+
+
+def _get_model() -> str:
+    return (
+        os.getenv("GEMINI_MODEL")
+        or os.getenv("GOOGLE_MODEL")
+        or os.getenv("OPENCODE_MODEL")
+        or os.getenv("MINIMAX_MODEL")
+        or _DEFAULT_MODEL
+    )
 
 
 def _get_client() -> OpenAI:
     """
-    Create the MiniMax (OpenAI-compatible) client lazily so .env
-    has been loaded before MINIMAX_API_KEY is read.
+    Create the Gemini (OpenAI-compatible) client lazily so .env
+    has been loaded before GEMINI_API_KEY is read.
 
     The `openai` SDK is imported HERE on first call, not at module
     load time — see the deferred-import note above the import
@@ -151,13 +194,9 @@ def _get_client() -> OpenAI:
         # only on first LLM call. Measured ~30 MB saved at idle.
         from openai import OpenAI
 
-        api_key = os.getenv("MINIMAX_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "MINIMAX_API_KEY is not set. Add it to your .env file."
-            )
-        base_url = os.getenv("MINIMAX_BASE_URL", _DEFAULT_BASE_URL)
-        timeout_ms = int(os.getenv("MINIMAX_TIMEOUT_MS", _DEFAULT_TIMEOUT_MS))
+        api_key = _get_api_key()
+        base_url = _get_base_url()
+        timeout_ms = _get_timeout_ms()
         _client = OpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -165,21 +204,18 @@ def _get_client() -> OpenAI:
         )
     return _client
 
-# ── Model selection ──────────────────────────────────────────
-# minimax-m3 is MiniMax's current production-tier model and gives
-# strong rephrasing quality for tailoring. Override at deploy
-# time via the MINIMAX_MODEL env var (e.g. to fall back to an
-# older generation without code changes).
-_MODEL = os.getenv("MINIMAX_MODEL", "minimax-m3")
+
+# Backward-compatibility alias for module-level model inspect
+_MODEL = _get_model()
 
 
 # ── Typed chat helper ────────────────────────────────────────
 _SchemaT = TypeVar("_SchemaT")
 
 
-# Output-format rule appended to every system prompt. MiniMax's
-# minimax-m3 is a reasoning model and will sometimes emit a
-#  think ... think  chain-of-thought block (and/or wrap the JSON
+# Output-format rule appended to every system prompt. Modern reasoning
+# models (such as mimo-v2.5-pro) will sometimes emit a
+# <think>...</think> chain-of-thought block (and/or wrap the JSON
 # in markdown code fences) even when response_format asks for
 # pure JSON. This hard, repeated instruction reduces — but does
 # not eliminate — that behavior. The regexes in
@@ -189,7 +225,7 @@ _OUTPUT_FORMAT_INSTRUCTION = (
     "valid JSON object that matches the schema provided in the user "
     "message. Do NOT include any of the following anywhere in your "
     "response:\n"
-    "  •  think ... think  reasoning blocks (or any other chain-of-thought)\n"
+    "  • <think>...</think> reasoning blocks (or any other chain-of-thought)\n"
     "  • Markdown code fences such as ``` json or ```\n"
     "  • Prose, commentary, or explanation before or after the JSON\n"
     "  • Any text outside of the JSON object itself\n"
@@ -198,10 +234,10 @@ _OUTPUT_FORMAT_INSTRUCTION = (
 
 
 # Compiled patterns for stripping common wrappers. Order matters:
-# we try  think  first, then code fences, then a first-{ to last-}
+# we try <think> first, then code fences, then a first-{ to last-}
 # slice. Each step is idempotent.
 _THINK_RE = re.compile(r"<!--.*?-->|```.*?```|\[.*?\]", flags=re.DOTALL)
-# Reasoning models emit `` blocks (lowercase). Some variants use
+# Reasoning models emit `<think>` blocks (lowercase). Some variants use
 # <thinking>...</thinking> or <reasoning>...</reasoning>.
 _THINK_BLOCK_RE = re.compile(
     r"<\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>.*?<\s*/\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>",
@@ -216,11 +252,11 @@ _CODE_FENCE_RE = re.compile(
 def _strip_response_wrappers(content: str) -> str:
     """
     Extract the JSON payload from a model response that may have
-    been wrapped in a reasoning block (``) or
+    been wrapped in a reasoning block (`<think>`) or
     markdown code fences (```` ``` json ... ``` ````).
 
     Strategy (applied in order):
-      1. Strip any `` (or similar) blocks.
+      1. Strip any `<think>` (or similar) blocks.
       2. Strip ``` ... ``` code fences.
       3. If the result still doesn't start with `{`, slice from
          the first `{` to the last `}`.
@@ -254,7 +290,7 @@ def _chat_json(
     schema_hint_name: str | None = None,
 ) -> _SchemaT:
     """
-    Call MiniMax with a system + user prompt and parse the
+    Call OpenCode with a system + user prompt and parse the
     response into the given Pydantic model.
 
     The model is instructed via `response_format={"type":
@@ -291,10 +327,11 @@ def _chat_json(
     openai.OpenAIError
         For transport / auth / rate-limit failures.
     """
+    model = _get_model()
     client = _get_client()
     logger.debug(
-        "MiniMax chat: model=%s schema=%s temperature=%s",
-        _MODEL,
+        "Gemini chat: model=%s schema=%s temperature=%s",
+        model,
         schema_hint_name or schema.__name__,
         temperature,
     )
@@ -310,7 +347,7 @@ def _chat_json(
                          user_bytes=len(user),
                          total_request_bytes=len(system) + len(_OUTPUT_FORMAT_INSTRUCTION) + len(user)):
         response = client.chat.completions.create(
-            model=_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
                 {"role": "user", "content": user},
@@ -323,7 +360,7 @@ def _chat_json(
               raw_response_bytes=len(raw) if raw else 0)
 
     if not raw.strip():
-        raise RuntimeError("MiniMax returned empty content.")
+        raise RuntimeError("Gemini returned empty content.")
 
     content = _strip_response_wrappers(raw)
 
@@ -341,7 +378,7 @@ def _chat_json(
             # treats this as a validation failure.
             if content != raw.strip():
                 logger.warning(
-                    "MiniMax response had to be unwrapped; raw[:200]=%r cleaned[:200]=%r",
+                    "Gemini response had to be unwrapped; raw[:200]=%r cleaned[:200]=%r",
                     raw[:200],
                     content[:200],
                 )
@@ -786,7 +823,7 @@ QUALITY GUIDELINES
 
 def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     """
-    Send the full profile + job description to MiniMax and get back
+    Send the full profile + job description to Gemini and get back
     a tailored resume as a validated Pydantic object.
 
     Parameters
@@ -805,8 +842,8 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
     Raises
     ------
     Exception
-        If the MiniMax API call fails (network error, invalid key,
-        rate limit, validation error on the response, etc.).  The
+        If the Gemini API call fails (network error, invalid key,
+        rate limit, validation error on the response, etc.). The
         caller (app.py) should catch this and return a helpful
         error to the frontend.
 
@@ -816,7 +853,7 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
        the model to read easily).
     2. Construct the user message with both the profile and JD,
        plus the target JSON Schema so the model knows the shape.
-    3. Call MiniMax with response_format=json_object and parse
+    3. Call Gemini with response_format=json_object and parse
        the response as TailoredProfile via Pydantic.
     4. Run the anti-fabrication sanitizer against the master
        profile.
@@ -839,7 +876,7 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
         f"Now produce the tailored resume JSON."
     )
 
-    # ── Step 3: Call MiniMax with JSON-object response format ─
+    # ── Step 3: Call Gemini with JSON-object response format ─
     tailored = _chat_json(
         system=_SYSTEM_PROMPT,
         user=user_message,
@@ -860,7 +897,7 @@ def tailor_resume(profile: Profile, job_description: str) -> TailoredProfile:
 
 def parse_resume_text(text: str) -> Profile:
     """
-    Send the raw resume text to MiniMax and parse it into a structured Profile Pydantic object.
+    Send the raw resume text to Gemini and parse it into a structured Profile Pydantic object.
     After parsing, list-like free-text fields (achievements, certification descriptions) are
     post-processed into semantic HTML so the rich-text editor receives properly formatted content.
 
@@ -870,7 +907,7 @@ def parse_resume_text(text: str) -> Profile:
     which sub-step blows up memory:
 
       1. prompt_construction     — build system + user prompt strings
-      2. gemini_api_request      — HTTP round-trip via OpenAI SDK
+      2. llm_api_request         — HTTP round-trip via OpenAI SDK
       3. pydantic_validation     — model_validate_json parse of response
 
     Each step logs `[parse-trace] START/END` with RSS memory +
@@ -914,7 +951,7 @@ def parse_resume_text(text: str) -> Profile:
               user_prompt_bytes=len(user_message),
               schema_json_bytes=len(schema_json))
 
-    # ── Step 2: MiniMax / Gemini API request ─────────────────
+    # ── Step 2: Gemini API request ─────────────────
     # _chat_json handles the OpenAI SDK round-trip. We can't easily
     # separate "request send" from "response wait" from inside it
     # without touching ai_service internals, but the END log of this
@@ -967,7 +1004,7 @@ class JobAnalysis(BaseModel):
 
 def analyze_job_description(job_description: str) -> JobAnalysis:
     """
-    Send a job description to MiniMax and parse it into structured JobAnalysis (skills and keywords).
+    Send a job description to Gemini and parse it into structured JobAnalysis (skills and keywords).
     """
     schema_json = json.dumps(JobAnalysis.model_json_schema(), indent=2)
     system_instruction = (
