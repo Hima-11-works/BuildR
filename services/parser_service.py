@@ -7,6 +7,8 @@ from __future__ import annotations
 import io
 import re
 
+from models.profile import Certification
+
 # ── Heavy imports: deferred ──────────────────────────────────
 # `pypdf` pulls in ~7 MB at import time (PDF parsing tables,
 # glyph lists, cryptography fallbacks). `python-docx` adds more.
@@ -85,22 +87,7 @@ def extract_text_from_docx(stream: io.BytesIO) -> str:
 
 
 # ── List-to-HTML conversion ───────────────────────────────────
-# Patterns recognised as list item prefixes.
-# Group 1 (optional) captures a numeric prefix such as "1." or "1)".
-# Group 2 captures the item text that follows the marker.
 
-_BULLET_RE = re.compile(
-    r"^[ \t]*"                       # optional leading whitespace
-    r"(?:"
-        r"(?P<num>\d+[.)]\s+)"       # numbered: "1. " or "1) "
-        r"|"
-        r"(?:[•·▪▸►\-\*–—]\s+)"     # bullet chars: •, -, *, –, —, ▪ …
-    r")"
-    r"(?P<text>.+)$",
-    re.MULTILINE,
-)
-
-_NUMBERED_LINE_RE = re.compile(r"^\d+[.)]\s+", re.MULTILINE)
 
 
 def _escape_html(text: str) -> str:
@@ -204,8 +191,6 @@ def postprocess_parsed_profile(profile: "Profile") -> "Profile":  # type: ignore
 
     Returns the same Profile object (mutated in-place) for convenience.
     """
-    from models.profile import Certification
-
     # ── Achievements ─────────────────────────────────────────────
     if profile.achievements and isinstance(profile.achievements, str):
         profile.achievements = text_to_html(profile.achievements)

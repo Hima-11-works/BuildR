@@ -85,8 +85,11 @@ import os
 import re
 from typing import TYPE_CHECKING, Type, TypeVar
 
+from pydantic import BaseModel, Field
+
 from models.profile import Profile
 from models.tailored_profile import TailoredProfile
+from models.tailoring_result import TailoringResult
 
 # ── Heavy import: deferred ──────────────────────────────────────
 # The `openai` SDK and its transitive deps (httpx, anyio, h11, httpcore,
@@ -205,10 +208,6 @@ def _get_client() -> OpenAI:
     return _client
 
 
-# Backward-compatibility alias for module-level model inspect
-_MODEL = _get_model()
-
-
 # ── Typed chat helper ────────────────────────────────────────
 _SchemaT = TypeVar("_SchemaT")
 
@@ -236,7 +235,6 @@ _OUTPUT_FORMAT_INSTRUCTION = (
 # Compiled patterns for stripping common wrappers. Order matters:
 # we try <think> first, then code fences, then a first-{ to last-}
 # slice. Each step is idempotent.
-_THINK_RE = re.compile(r"<!--.*?-->|```.*?```|\[.*?\]", flags=re.DOTALL)
 # Reasoning models emit `<think>` blocks (lowercase). Some variants use
 # <thinking>...</thinking> or <reasoning>...</reasoning>.
 _THINK_BLOCK_RE = re.compile(
@@ -426,15 +424,14 @@ def _canon_skill(value: str | None) -> str:
     """
     if not value:
         return ""
-    import re as _re
     s = value.strip().casefold()
     # Strip every non-alphanumeric char.
-    s = _re.sub(r"[^a-z0-9]+", "", s)
+    s = re.sub(r"[^a-z0-9]+", "", s)
     if not s:
         return ""
     # Collapse only runs of 3+ identical chars (handles "loooong" -> "long"
     # without touching legitimate double letters like the "ll" in "hello").
-    s = _re.sub(r"(.)\1{2,}", r"\1", s)
+    s = re.sub(r"(.)\1{2,}", r"\1", s)
     # Whole-string period detection: if `s` is a repetition of a shorter
     # substring, return that shorter substring.
     n = len(s)
@@ -519,8 +516,6 @@ def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> 
         Only for truly unrecoverable structural errors (currently none;
         all known AI deviations are recoverable).
     """
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
     warnings: list[str] = []
 
     # ── 1. Personal info — silently restore from original ────────
@@ -700,15 +695,14 @@ def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> 
     # (<ul> or <ol>) but the tailored version does not, re-wrap the
     # tailored text items back into the same list type so the
     # downstream html_to_latex converter can emit \begin{itemize}.
-    import re as _re
     from bs4 import BeautifulSoup as _BS
 
     original_ach = (profile.achievements or "").strip()
     tailored_ach = (tailored.achievements or "").strip()
 
     if original_ach and tailored_ach:
-        original_has_list = bool(_re.search(r"<[uo]l[\s>]", original_ach, _re.IGNORECASE))
-        tailored_has_list = bool(_re.search(r"<[uo]l[\s>]", tailored_ach, _re.IGNORECASE))
+        original_has_list = bool(re.search(r"<[uo]l[\s>]", original_ach, re.IGNORECASE))
+        tailored_has_list = bool(re.search(r"<[uo]l[\s>]", tailored_ach, re.IGNORECASE))
 
         if original_has_list and not tailored_has_list:
             # Determine the list type used in the original (<ul> or <ol>).
@@ -729,8 +723,8 @@ def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> 
             # may have inserted as plain-text bullets.
             cleaned = []
             for ln in lines:
-                ln = _re.sub(r"^[•·▪▸►\-\*–—]\s+", "", ln)
-                ln = _re.sub(r"^\d+[.)]\s+", "", ln)
+                ln = re.sub(r"^[•·▪▸►\-\*–—]\s+", "", ln)
+                ln = re.sub(r"^\d+[.)]\s+", "", ln)
                 if ln:
                     cleaned.append(ln)
 
@@ -753,7 +747,7 @@ def _sanitize_tailored_output(profile: Profile, tailored: "TailoredProfile") -> 
 
     # Log all corrections at DEBUG level for server-side visibility.
     for w in warnings:
-        _log.debug("[sanitize_tailored_output] %s", w)
+        logger.debug("[sanitize_tailored_output] %s", w)
 
     return warnings
 
@@ -990,8 +984,6 @@ def parse_resume_text(text: str) -> Profile:
 
 
 # ── Job Analysis Schema and Service ───────────────────────────
-from pydantic import BaseModel, Field
-
 class JobAnalysis(BaseModel):
     """Structured analysis results from a job description."""
     skills: list[str] = Field(
@@ -1033,8 +1025,6 @@ def analyze_job_description(job_description: str) -> JobAnalysis:
 
 
 # ── Tailor Resume Workspace Helpers ───────────────────────────
-from models.tailoring_result import TailoringResult
-
 def tailor_resume_v2(profile: Profile, job_description: str, preferences: dict) -> TailoringResult:
     """
     Initial tailoring from the setup inputs (preferences like style, focus areas, job level).

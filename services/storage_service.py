@@ -19,11 +19,9 @@
 # --------------------
 # Each user's master profile lives at storage/users/<user_id>/profile.json
 # so two users can never overwrite each other's data, even by accident.
-# The user_id is the SHA-256 prefix of the user's email (see
-# services/auth_service.py) and is supplied by the route handler after
-# @require_auth has confirmed a signed-in session. Storage code does NOT
-# trust user-supplied identifiers — auth_service.user_root() rejects
-# anything that isn't a valid hex string before this layer is reached.
+# The user_id is supplied by the route handler (typically DEFAULT_USER_ID).
+# Storage code scopes paths through auth_service.user_root(), which validates
+# the user_id against safe characters before this layer is reached.
 #
 # WHY WE VALIDATE ON BOTH LOAD *AND* SAVE
 # ─────────────────────────────────────────
@@ -64,6 +62,7 @@
 # don't need manual if-checks scattered across your codebase.
 # ──────────────────────────────────────────────────────────────
 
+import datetime
 import json
 from pathlib import Path
 
@@ -153,7 +152,6 @@ def save_profile(user_id: str, profile: Profile) -> None:
     """
 
     # ── Populate Metadata Timestamps ──────────────────────────
-    import datetime
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     if not profile.metadata.created_at:
         profile.metadata.created_at = now_iso

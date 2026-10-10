@@ -281,9 +281,6 @@ class Certification(BaseModel):
     )
 
 
-
-
-
 # ─── Profile (top-level document) ────────────────────────────
 # This is the *root* model — it contains everything.
 #

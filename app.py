@@ -43,8 +43,9 @@ import io
 import json
 import os
 import tempfile
+import traceback
 from contextlib import contextmanager
-from pathlib import Path as _Path
+from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file
 from pydantic import ValidationError
@@ -99,8 +100,6 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
 # Secret key for Flask session — still needed for CSRF-safe forms
 # even though we no longer use signed auth cookies.
 app.secret_key = os.getenv("SECRET_KEY", "dev-fallback-key")
-
-_PROJECT_ROOT = _Path(__file__).resolve().parent
 
 # ── Startup cleanup ──────────────────────────────────────────
 # Sweep out abandoned tailoring sessions older than a week for
@@ -290,7 +289,6 @@ def api_parse_resume():
             return jsonify({"error": "The uploaded file is empty."}), 400
 
         # ── Step 2: extract text ─────────────────────────────────
-        import io
         file_stream = io.BytesIO(raw_bytes)
         is_pdf = filename.endswith(".pdf")
         with instrument_step(
@@ -329,7 +327,6 @@ def api_parse_resume():
         return jsonify(serialized)
     except Exception as e:
         print(f"Error parsing resume: {str(e)}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
 
@@ -367,13 +364,13 @@ def _isolated_compile(tex_string: str):
     which writes into a unique, freshly-made resume_id folder.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        yield compile_pdf(tex_string, _Path(tmpdir))
+        yield compile_pdf(tex_string, Path(tmpdir))
 
 
 @app.route("/api/resume/master", methods=["POST"])
 def api_generate_master_resume():
     """
-    Generate the master resume as a PDF for the signed-in user.
+    Generate the master resume as a PDF for the current user.
 
     PIPELINE (with intelligent one-page optimization)
     --------------------------------------------------
@@ -461,10 +458,9 @@ def api_generate_master_resume():
         # test_regenerating_master_resume_does_not_duplicate_library_entry).
         delete_resumes_by_type(user_id, "master")
 
-        import tempfile as _tempfile
-        with _tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
             tf.write(final_pdf_bytes)
-            stable_pdf_path = _Path(tf.name)
+            stable_pdf_path = Path(tf.name)
         try:
             resume_id = save_resume(
                 user_id=user_id,
@@ -498,7 +494,6 @@ def api_generate_master_resume():
     except Exception as e:
         print(f"\n{'='*60}")
         print(f"RESUME GENERATION ERROR: {e}")
-        import traceback
         traceback.print_exc()
         print(f"{'='*60}\n")
         return jsonify({
@@ -593,7 +588,7 @@ def api_analyze_job():
 @app.route("/api/tailor/start", methods=["POST"])
 def api_tailor_start():
     """
-    Initializes a tailoring session for the signed-in user, calls Gemini
+    Initializes a tailoring session for the user, calls Gemini
     for the initial tailoring, and saves it to the user's session folder.
     """
     data = request.get_json()
@@ -665,7 +660,6 @@ def api_tailor_start():
 
     except Exception as e:
         print(f"Error starting tailoring workspace: {str(e)}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to tailor resume: {str(e)}"}), 500
 
@@ -674,7 +668,7 @@ def api_tailor_start():
 def api_tailor_chat():
     """
     Accepts user instructions, calls Gemini to refine the active draft,
-    and updates the active draft files for the signed-in user.
+    and updates the active draft files for the user.
     """
     data = request.get_json()
     if not data or "session_id" not in data or "message" not in data:
@@ -727,7 +721,6 @@ def api_tailor_chat():
 
     except Exception as e:
         print(f"Error refining resume with chat: {str(e)}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to refine resume: {str(e)}"}), 500
 
@@ -736,7 +729,7 @@ def api_tailor_chat():
 def api_tailor_snapshot():
     """
     Saves an explicit named snapshot of the current active draft for the
-    signed-in user.
+    user.
     """
     data = request.get_json()
     if not data or "session_id" not in data or "name" not in data:
@@ -761,7 +754,7 @@ def api_tailor_snapshot():
 @app.route("/api/tailor/restore", methods=["POST"])
 def api_tailor_restore():
     """
-    Overwrites the signed-in user's active draft with a selected snapshot's data.
+    Overwrites the user's active draft with a selected snapshot's data.
     """
     data = request.get_json()
     if not data or "session_id" not in data or "snapshot_id" not in data:
@@ -788,7 +781,7 @@ def api_tailor_restore():
 @app.route("/api/tailor/save", methods=["POST"])
 def api_tailor_save():
     """
-    Saves the signed-in user's current active draft to their Resume Library.
+    Saves the user's current active draft to their Resume Library.
     """
     data = request.get_json()
     if not data or "session_id" not in data:
@@ -833,7 +826,7 @@ def api_tailor_save():
 @app.route("/api/tailor/draft/<session_id>", methods=["GET"])
 def api_tailor_get_draft(session_id):
     """
-    Return the signed-in user's current active draft profile and AI metadata
+    Return the user's current active draft profile and AI metadata
     for the workspace editor.
     """
     user_id = DEFAULT_USER_ID
@@ -858,7 +851,7 @@ def api_tailor_get_draft(session_id):
 def api_tailor_update_draft(session_id):
     """
     Accept a manually edited profile JSON from the workspace editor and save
-    it as the signed-in user's active draft. Preserves existing AI metadata
+    it as the user's active draft. Preserves existing AI metadata
     (suggestions, stats, insights) so only the profile content is overwritten.
 
     This is the bridge that lets AI and user collaborate on the SAME working
@@ -900,7 +893,7 @@ def api_tailor_update_draft(session_id):
 @app.route("/api/tailor/download/<session_id>", methods=["POST"])
 def api_tailor_download(session_id):
     """
-    Generate and download a PDF from the signed-in user's latest active draft.
+    Generate and download a PDF from the user's latest active draft.
 
     Pipeline:
     1. load_draft() → Profile (includes all manual + AI edits)
@@ -955,7 +948,6 @@ def api_tailor_download(session_id):
         return jsonify({"error": str(e), "log": e.log}), 500
     except Exception as e:
         print(f"Error downloading tailored resume: {str(e)}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to download resume: {str(e)}"}), 500
 
@@ -963,7 +955,7 @@ def api_tailor_download(session_id):
 @app.route("/api/tailor/preview/<session_id>/<version_type>/<version_id>", methods=["GET"])
 def api_tailor_preview(session_id, version_type, version_id):
     """
-    Generates the PDF preview on the fly for the signed-in user's active
+    Generates the PDF preview on the fly for the user's active
     draft or snapshot, meaning we never store intermediate PDF files
     permanently on disk.
     """
@@ -1007,7 +999,6 @@ def api_tailor_preview(session_id, version_type, version_id):
 
     except Exception as e:
         print(f"Error compiling on-the-fly preview: {str(e)}")
-        import traceback
         traceback.print_exc()
         return f"Failed to generate PDF preview: {str(e)}", 500
 
@@ -1015,7 +1006,7 @@ def api_tailor_preview(session_id, version_type, version_id):
 @app.route("/api/resume/tailored", methods=["POST"])
 def api_generate_tailored_resume():
     """
-    Generate a tailored resume as a PDF for the signed-in user, optimized
+    Generate a tailored resume as a PDF for the user, optimized
     for a specific job.
 
     EXPECTS
@@ -1114,7 +1105,6 @@ def api_generate_tailored_resume():
     except Exception as e:
         print(f"\n{'='*60}")
         print(f"TAILORED RESUME ERROR: {e}")
-        import traceback
         traceback.print_exc()
         print(f"{'='*60}\n")
         return jsonify({
@@ -1132,7 +1122,7 @@ def api_generate_tailored_resume():
 @app.route("/api/resumes", methods=["GET"])
 def api_list_resumes():
     """
-    List the signed-in user's saved resumes with their metadata.
+    List the user's saved resumes with their metadata.
 
     Returns a JSON array sorted newest-first, e.g.:
     [
@@ -1158,7 +1148,7 @@ def api_list_resumes():
 @app.route("/api/resumes/<resume_id>/pdf", methods=["GET"])
 def api_download_resume_pdf(resume_id):
     """
-    Download the PDF for one of the signed-in user's saved resumes.
+    Download the PDF for one of the user's saved resumes.
 
     The resume_id is the folder name (e.g. "20260701-005402_master").
     Path traversal is blocked by resume_library.get_resume_path(), and
@@ -1185,7 +1175,7 @@ def api_download_resume_pdf(resume_id):
 @app.route("/api/resumes/<resume_id>/tex", methods=["GET"])
 def api_download_resume_tex(resume_id):
     """
-    Download the editable .tex source for one of the signed-in user's
+    Download the editable .tex source for one of the user's
     saved resumes. Same safety checks as the PDF route.
     """
     try:
@@ -1208,7 +1198,7 @@ def api_download_resume_tex(resume_id):
 @app.route("/api/resumes/<resume_id>", methods=["DELETE"])
 def api_delete_resume(resume_id):
     """
-    Delete one of the signed-in user's saved resumes and its entire folder.
+    Delete one of the user's saved resumes and its entire folder.
 
     SECURITY
     --------
@@ -1233,7 +1223,7 @@ def api_delete_resume(resume_id):
 @app.route("/api/resumes/<resume_id>", methods=["PATCH"])
 def api_rename_resume(resume_id):
     """
-    Rename one of the signed-in user's saved resume's display label (the
+    Rename one of the user's saved resume's display label (the
     folder/ID is unchanged, so existing download links keep working).
     """
     data = request.get_json()
@@ -1255,7 +1245,7 @@ def api_rename_resume(resume_id):
 @app.route("/api/resumes/<resume_id>/duplicate", methods=["POST"])
 def api_duplicate_resume(resume_id):
     """
-    Duplicate one of the signed-in user's saved resumes (tex + pdf +
+    Duplicate one of the user's saved resumes (tex + pdf +
     metadata) into a new library entry.
     """
     data = request.get_json(silent=True) or {}
