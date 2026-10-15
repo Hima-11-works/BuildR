@@ -305,7 +305,7 @@ class TestGeminiConfiguration:
         monkeypatch.delenv("GOOGLE_MODEL", raising=False)
         monkeypatch.delenv("OPENCODE_MODEL", raising=False)
         monkeypatch.delenv("MINIMAX_MODEL", raising=False)
-        assert _get_model() == "gemini-2.5-flash"
+        assert _get_model() == "gemini-3.8-flash"
 
         monkeypatch.setenv("GEMINI_MODEL", "gemini-1.5-pro")
         assert _get_model() == "gemini-1.5-pro"

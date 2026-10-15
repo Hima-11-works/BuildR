@@ -15,7 +15,7 @@ Welcome to **BuildR**! This document serves as the comprehensive technical speci
    - Document rendering is completely decoupled from content storage: LaTeX templates transform validated Pydantic profile objects into clean, ATS-optimized PDFs.
 
 2. **The "AI Decides Content, Code Renders Document" Paradigm**:
-   - The LLM (Google Gemini via `openai` SDK, running `gemini-2.5-flash`) is **never** asked to generate raw LaTeX strings. Asking LLMs to generate LaTeX directly leads to unescaped syntax errors, compilation crashes, and broken layouts.
+   - The LLM (Google Gemini via `openai` SDK, running `gemini-3.8-flash`) is **never** asked to generate raw LaTeX strings. Asking LLMs to generate LaTeX directly leads to unescaped syntax errors, compilation crashes, and broken layouts.
    - Instead, Gemini is constrained via **Pydantic Response Schemas** and **Constrained Decoding** to emit structured JSON containing only item selection, reordering, and bullet rephrasing.
    - Python code owns all escaping, Jinja2 templating, and LaTeX compilation via the **Tectonic** CLI.
 
@@ -117,7 +117,7 @@ flowchart TD
     end
 
     subgraph LLM ["External / CLI Engines"]
-        Gemini[Google Gemini API gemini-2.5-flash]
+        Gemini[Google Gemini API gemini-3.8-flash]
         Tectonic[Tectonic LaTeX Compiler]
     end
 
@@ -178,7 +178,7 @@ flowchart TD
 ### 3. AI Tailoring Workspace Pipeline (v2 Workspace Flow)
 1. **Initialization**: The user inputs a job description (or URL scraped by [services/scraper_service.py](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/scraper_service.py)) and tailoring preferences.
 2. **Session Creation**: `session_service.create_session()` creates a unique workspace folder in [storage/sessions/<session_id>/](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/services/session_service.py).
-3. **LLM Tailoring**: `tailor_resume_v2()` sends the Master Profile JSON and Job Description to Gemini (`gemini-2.5-flash`) with structured response schema [TailoringResult](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailoring_result.py#L26-L33).
+3. **LLM Tailoring**: `tailor_resume_v2()` sends the Master Profile JSON and Job Description to Gemini (`gemini-3.8-flash`) with structured response schema [TailoringResult](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/models/tailoring_result.py#L26-L33).
 4. **Anti-Hallucination Sanitization**: `_sanitize_tailored_output()` verifies the response:
    - Canonical skill matching (`_canon_skill()`) checks if skill strings match the Master Profile.
    - Any invented technologies, roles, companies, or metrics are silently stripped.
@@ -278,8 +278,8 @@ GEMINI_API_KEY=your_actual_gemini_api_key_here
 # Gemini base URL (Optional, default: https://generativelanguage.googleapis.com/v1beta/openai/)
 # GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 
-# Gemini model choice (Optional, default: gemini-2.5-flash)
-# GEMINI_MODEL=gemini-2.5-flash
+# Gemini model choice (Optional, default: gemini-3.8-flash)
+# GEMINI_MODEL=gemini-3.8-flash
 
 # Gemini API call timeout in milliseconds (Default: 90000)
 GEMINI_TIMEOUT_MS=90000

@@ -93,7 +93,7 @@ and schema validation directly.
 |---|---|---|---|
 | `GEMINI_API_KEY` | yes | — | Primary API key (fallback: `GOOGLE_API_KEY`) |
 | `GEMINI_BASE_URL` | no | `https://generativelanguage.googleapis.com/v1beta/openai/` | Google OpenAI-compatible endpoint |
-| `GEMINI_MODEL` | no | `gemini-2.5-flash` | Model name |
+| `GEMINI_MODEL` | no | `gemini-3.8-flash` | Model name |
 | `GEMINI_TIMEOUT_MS` | no | `90000` | Per-request HTTP timeout |
 | `FLASK_DEBUG` | no | `0` | `1` for dev auto-reload |
 | `PORT` | no | `5000` | Dev server port |

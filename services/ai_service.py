@@ -125,7 +125,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────
 
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-_DEFAULT_MODEL = "gemini-2.5-flash"
+_DEFAULT_MODEL = "gemini-3.8-flash"
 _DEFAULT_TIMEOUT_MS = 90_000
 
 _client: OpenAI | None = None
