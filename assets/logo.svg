@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="28" fill="#111111"/>
+  <text x="50" y="53" text-anchor="middle" dominant-baseline="central"
+        font-family="'Segoe UI', Arial, Helvetica, sans-serif" font-weight="800"
+        font-size="62" fill="#F4EEE6">B</text>
+</svg>
