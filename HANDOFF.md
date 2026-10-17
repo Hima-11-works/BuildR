@@ -39,8 +39,6 @@ BuildR/
 ├── app.py                      # Core Flask application, configuration, and API router (17 REST endpoints)
 ├── requirements.txt            # Production Python dependencies (Flask, Pydantic, openai, etc.)
 ├── requirements-dev.txt        # Development dependencies (pytest)
-├── Procfile                    # Production process definition for Render (Gunicorn WSGI server)
-├── render-build.sh             # Render deployment script (installs pinned Tectonic v0.16.9 binary)
 ├── README.md                   # User-facing features and quickstart documentation
 ├── LICENSE                     # MIT License
 │
@@ -351,25 +349,21 @@ BuildR features a 180-test pytest suite that covers all core modules, routing en
 
 ---
 
-## ☁️ Deployment Architecture (Render.com)
+## 💻 Local Execution Architecture
 
-BuildR is pre-configured for deployment as a Python Web Service on **Render**.
+BuildR runs locally as a Flask application with local storage persistence and subprocess-based LaTeX compilation.
 
-### Deployment Settings
-- **Build Command**: `./render-build.sh`
-- **Start Command**: `gunicorn --bind 0.0.0.0:$PORT app:app` (defined in [Procfile](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/Procfile))
-- **Environment Variables**: Set `GEMINI_API_KEY` in the Render dashboard.
+### Local Runtime Settings
+- **Start Command**: `python app.py` (or `.\env\Scripts\python.exe app.py`)
+- **Environment Variables**: Defined in `.env` (copy from `.env.example`).
+- **Compiler**: Uses local Tectonic installation discovered on system PATH or in the user's home directory.
 
-### How Tectonic Works on Render
-[render-build.sh](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/BuildR/render-build.sh) downloads a pinned release of Tectonic (v0.16.9) directly from GitHub Releases and places the executable binary at `$HOME/tectonic`.
-
-`pdf_service.py`'s binary locator `_find_tectonic()` automatically checks `Path.home() / "tectonic"`:
+### How Tectonic Works Locally
+`pdf_service.py`'s binary locator `_find_tectonic()` automatically checks `PATH` and user home directories (`~/tectonic` or `~/tectonic.exe`):
 ```python
-home_path_unix = Path.home() / "tectonic"
-if home_path_unix.exists():
-    return str(home_path_unix)
+home_candidates = [Path.home() / "tectonic", Path.home() / "tectonic.exe"]
 ```
-This enables zero-config binary discovery on Linux container hosts without requiring `root` permissions or global `PATH` modifications.
+This enables zero-config binary discovery across Windows, macOS, and Linux without needing hardcoded paths.
 
 ---
 

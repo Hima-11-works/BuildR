@@ -248,8 +248,6 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
         "  macOS:    brew install tectonic\n"
         "  Linux:    cargo install tectonic\n"
         "  Any OS:   conda install -c conda-forge tectonic\n"
-        "On Render, ensure render-build.sh ran successfully and that "
-        "Tectonic is at .tectonic/tectonic inside the project root.\n"
         "Then restart the server."
     )
     if tectonic_bin == "tectonic" and shutil.which("tectonic") is None:
@@ -301,9 +299,7 @@ def compile_pdf(tex_string: str, output_dir: Path) -> Path:
             "Tectonic timed out after 180 seconds. "
             "This usually means the package cache is empty and "
             "Tectonic is downloading LaTeX packages over a slow "
-            "network. On Render, ensure render-build.sh ran the "
-            "pre-warm step successfully. Locally, try "
-            "'tectonic --version' once to populate the cache.",
+            "network. Try running 'tectonic --version' once to populate the cache.",
             log="",
         )
 
