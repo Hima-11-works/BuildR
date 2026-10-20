@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -42,12 +44,54 @@ logger = logging.getLogger(__name__)
 
 # ── Per-user filesystem root ──────────────────────────────────
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-USERS_ROOT = _PROJECT_ROOT / "storage" / "users"
+
+
+def _resolve_users_root() -> Path:
+    """
+    Resolve the root directory for storing user files.
+
+    In serverless deployments (such as AWS Lambda or Vercel where code is mounted
+    at /var/task), the deployment filesystem is strictly read-only. We detect this
+    condition and automatically point storage to a writable temporary directory
+    (/tmp/buildr_storage/users).
+
+    An explicit BUILDR_STORAGE_DIR or STORAGE_DIR environment variable can also
+    be supplied to override this location.
+    """
+    custom = os.getenv("BUILDR_STORAGE_DIR") or os.getenv("STORAGE_DIR")
+    if custom:
+        target = Path(custom) / "users"
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+        except Exception as exc:
+            logger.warning("Custom storage dir '%s' could not be created: %s", custom, exc)
+
+    target = _PROJECT_ROOT / "storage" / "users"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        # Test writability
+        test_file = target / ".writetest"
+        test_file.touch()
+        test_file.unlink()
+        return target
+    except (OSError, PermissionError):
+        # Read-only filesystem (e.g. AWS Lambda / Vercel /var/task)
+        fallback = Path(tempfile.gettempdir()) / "buildr_storage" / "users"
+        try:
+            fallback.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        logger.info("Read-only filesystem detected; using writable directory '%s'", fallback)
+        return fallback
+
+
+USERS_ROOT = _resolve_users_root()
 
 
 def user_root(user_id: str) -> Path:
     """
-    Return <project>/storage/users/<user_id>, creating the directory
+    Return <USERS_ROOT>/<user_id>, creating the directory
     if it does not yet exist. Callers use this as the base for
     profile.json, resumes/, and sessions/.
 
@@ -56,14 +100,22 @@ def user_root(user_id: str) -> Path:
     and forwards an attacker-controlled id, this layer refuses to
     materialize a directory outside the users tree.
 
-    We create the directory eagerly so subsequent writes never have
-    to wonder whether their parent dir exists.
+    If USERS_ROOT fails with a read-only filesystem error at runtime,
+    it dynamically switches to the system temporary directory.
     """
     if not user_id or not re.match(r"^[A-Za-z0-9_-]+$", user_id):
         raise ValueError(f"Invalid user_id: {user_id!r}")
-    path = USERS_ROOT / user_id
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+
+    global USERS_ROOT
+    try:
+        path = USERS_ROOT / user_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except (OSError, PermissionError):
+        USERS_ROOT = Path(tempfile.gettempdir()) / "buildr_storage" / "users"
+        path = USERS_ROOT / user_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
 
 # ── Session helpers ───────────────────────────────────────────

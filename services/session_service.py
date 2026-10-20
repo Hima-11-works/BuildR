@@ -23,15 +23,18 @@ _SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60  # 7 days
 
 def user_sessions_dir(user_id: str) -> Path:
     """
-    Return <project>/storage/users/<user_id>/sessions, creating the
-    directory tree if it does not yet exist. Every function in this
-    module that touches a session file uses this helper, so all
-    tailoring scratch space is automatically scoped to the
-    authenticated user.
+    Return the user's sessions directory, creating it if it does not yet exist.
+    Falls back to a writable tempdir if the root filesystem is read-only.
     """
-    sessions_dir = user_root(user_id) / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    return sessions_dir
+    try:
+        sessions_dir = user_root(user_id) / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        return sessions_dir
+    except (OSError, PermissionError):
+        import tempfile
+        fallback = Path(tempfile.gettempdir()) / "buildr_storage" / "users" / user_id / "sessions"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def get_session_dir(user_id: str, session_id: str) -> Path:

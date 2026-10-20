@@ -68,15 +68,18 @@ from services.auth_service import user_root
 
 def user_resumes_dir(user_id: str) -> Path:
     """
-    Return <project>/storage/users/<user_id>/resumes, creating the
-    directory tree if it does not yet exist. Every function in this
-    module that touches a resume file uses this helper, so all
-    library operations are automatically scoped to the authenticated
-    user.
+    Return the user's resumes directory, creating it if it does not yet exist.
+    Falls back to a writable tempdir if the root filesystem is read-only.
     """
-    resumes_dir = user_root(user_id) / "resumes"
-    resumes_dir.mkdir(parents=True, exist_ok=True)
-    return resumes_dir
+    try:
+        resumes_dir = user_root(user_id) / "resumes"
+        resumes_dir.mkdir(parents=True, exist_ok=True)
+        return resumes_dir
+    except (OSError, PermissionError):
+        import tempfile
+        fallback = Path(tempfile.gettempdir()) / "buildr_storage" / "users" / user_id / "resumes"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 # ── Filenames used inside each resume folder ──────────────────
@@ -258,26 +261,52 @@ def list_resumes(user_id: str) -> list[dict]:
     resumes_dir = user_resumes_dir(user_id)
 
     resumes = []
-    for entry in resumes_dir.iterdir():
-        if not entry.is_dir():
-            continue
+    try:
+        resumes_dir = user_resumes_dir(user_id)
+        if resumes_dir.exists():
+            for entry in resumes_dir.iterdir():
+                if not entry.is_dir():
+                    continue
 
-        meta_path = entry / _META_FILENAME
-        if not meta_path.exists():
-            continue
+                meta_path = entry / _META_FILENAME
+                if not meta_path.exists():
+                    continue
 
-        try:
-            raw = meta_path.read_text(encoding="utf-8")
-            meta = json.loads(raw)
-            # Ensure the ID matches the folder name
-            meta["id"] = entry.name
-            # Check that the PDF actually exists
-            meta["has_pdf"] = (entry / _PDF_FILENAME).exists()
-            meta["has_tex"] = (entry / _TEX_FILENAME).exists()
-            resumes.append(meta)
-        except (json.JSONDecodeError, KeyError):
-            # Corrupt metadata — skip this entry
-            continue
+                try:
+                    raw = meta_path.read_text(encoding="utf-8")
+                    meta = json.loads(raw)
+                    # Ensure the ID matches the folder name
+                    meta["id"] = entry.name
+                    # Check that the PDF actually exists
+                    meta["has_pdf"] = (entry / _PDF_FILENAME).exists()
+                    meta["has_tex"] = (entry / _TEX_FILENAME).exists()
+                    resumes.append(meta)
+                except (json.JSONDecodeError, KeyError):
+                    # Corrupt metadata — skip this entry
+                    continue
+    except (OSError, PermissionError) as exc:
+        pass
+
+    # ── Merge with Firestore variations ───────────────────────
+    try:
+        from services import firestore_service
+        fs_variations = firestore_service.list_resume_variations(user_id)
+        local_ids = {r["id"] for r in resumes}
+        for fv in fs_variations:
+            fid = fv.get("id")
+            if fid and fid not in local_ids:
+                resumes.append({
+                    "id": fid,
+                    "type": fv.get("type", "tailored"),
+                    "label": fv.get("label", "Resume"),
+                    "date": fv.get("date", ""),
+                    "job_description": fv.get("job_description"),
+                    "user_id": user_id,
+                    "has_pdf": False,  # PDFs are kept on local disk only
+                    "has_tex": bool(fv.get("tex")),
+                })
+    except Exception:
+        pass
 
     # Sort by date, newest first
     resumes.sort(key=lambda r: r.get("date", ""), reverse=True)
