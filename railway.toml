@@ -1,0 +1,22 @@
+# ──────────────────────────────────────────────────────────────
+# railway.toml — Railway project configuration for BuildR
+# ──────────────────────────────────────────────────────────────
+# Docs: https://docs.railway.com/reference/config-as-code
+
+[build]
+# Tell Railway to use our Dockerfile instead of auto-detecting Nixpacks.
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Railway will set $PORT automatically — our CMD already reads it.
+startCommand = ""
+
+# Restart the service automatically if it crashes.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Health check: Railway will hit GET / to confirm the container is alive.
+# Increase the timeout to account for the first cold-start (Tectonic cache warm-up).
+healthcheckPath = "/"
+healthcheckTimeout = 120

@@ -92,6 +92,35 @@ def _init_firebase() -> firebase_admin.App:
                 sa_path = str(candidate)
                 break
 
+    # ── Railway / cloud deployment: JSON content passed as env var ──
+    # On platforms like Railway that cannot mount secret files, pass the
+    # entire service-account JSON as the FIREBASE_SERVICE_ACCOUNT_JSON
+    # environment variable.  We write it to a temp file so the rest of
+    # this function stays unchanged.
+    if not sa_path:
+        sa_json_content = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if sa_json_content:
+            import json as _json
+            import tempfile
+            try:
+                _json.loads(sa_json_content)  # validate it's real JSON first
+                tmp = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".json", delete=False, encoding="utf-8"
+                )
+                tmp.write(sa_json_content)
+                tmp.flush()
+                tmp.close()
+                sa_path = tmp.name
+                logger.info(
+                    "Firebase Admin SDK: loaded service-account from "
+                    "FIREBASE_SERVICE_ACCOUNT_JSON env var (Railway/cloud mode)."
+                )
+            except Exception as exc:
+                logger.warning(
+                    "FIREBASE_SERVICE_ACCOUNT_JSON is set but could not be "
+                    "parsed as JSON: %s. Falling back to ApplicationDefault.", exc
+                )
+
     global _has_service_account
     if sa_path and Path(sa_path).exists():
         cred = credentials.Certificate(sa_path)

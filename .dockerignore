@@ -1,0 +1,50 @@
+# ──────────────────────────────────────────────────────────────
+# .dockerignore — Files excluded from the Docker build context
+# ──────────────────────────────────────────────────────────────
+# Keeping the build context small speeds up `docker build` and
+# prevents secrets / generated files from leaking into the image.
+
+# ── Secrets (never bake into image) ──────────────────────────
+.env
+*serviceAccountKey*.json
+*service-account*.json
+
+# ── Generated / runtime output ────────────────────────────────
+# storage/ is created at runtime inside the container.
+storage/
+.tectonic/
+
+# ── Python bytecode ───────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ── Virtual environments ──────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Tests ────────────────────────────────────────────────────
+tests/
+.pytest_cache/
+
+# ── IDE / editor files ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS junk ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Git internals ────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── CI / docs (not needed at runtime) ────────────────────────
+*.md
+LICENSE
+HANDOFF.md
