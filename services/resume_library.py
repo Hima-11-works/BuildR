@@ -233,6 +233,18 @@ def save_resume(
         encoding="utf-8",
     )
 
+    # ── Persist variation data values to Firestore (NO PDFs) ──
+    try:
+        from services import firestore_service
+        firestore_service.save_resume_variation(
+            user_id=user_id,
+            resume_id=resume_id,
+            metadata=metadata,
+            tex_string=tex_string,
+        )
+    except Exception as exc:
+        pass  # Never let cloud failure block local operations
+
     return resume_id
 
 
@@ -382,6 +394,11 @@ def delete_resume(user_id: str, resume_id: str) -> bool:
 
     # ── Safe to delete ────────────────────────────────────────
     shutil.rmtree(resume_dir)
+    try:
+        from services import firestore_service
+        firestore_service.delete_resume_variation(user_id, resume_id)
+    except Exception:
+        pass
     return True
 
 
@@ -426,6 +443,13 @@ def rename_resume(user_id: str, resume_id: str, new_label: str) -> dict:
     meta["label"] = new_label
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     meta["id"] = resume_id
+
+    try:
+        from services import firestore_service
+        firestore_service.update_resume_variation_label(user_id, resume_id, new_label)
+    except Exception:
+        pass
+
     return meta
 
 
@@ -477,5 +501,18 @@ def duplicate_resume(user_id: str, resume_id: str, new_label: Optional[str] = No
     (new_dir / _META_FILENAME).write_text(
         json.dumps(new_meta, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+
+    try:
+        tex_path = new_dir / _TEX_FILENAME
+        tex_string = tex_path.read_text(encoding="utf-8") if tex_path.exists() else ""
+        from services import firestore_service
+        firestore_service.save_resume_variation(
+            user_id=user_id,
+            resume_id=new_id,
+            metadata=new_meta,
+            tex_string=tex_string,
+        )
+    except Exception:
+        pass
 
     return new_id

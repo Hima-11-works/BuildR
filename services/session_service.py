@@ -179,6 +179,24 @@ def update_draft(user_id: str, session_id: str, profile: Profile, metadata: dict
     with open(draft_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
+    # ── Persist AI variation draft to Firestore ───────────────
+    try:
+        from services import firestore_service
+        job_ctx = None
+        try:
+            job_ctx = load_job_context(user_id, session_id)
+        except Exception:
+            pass
+        firestore_service.save_session_draft(
+            user_id=user_id,
+            session_id=session_id,
+            draft_data=profile.model_dump(),
+            metadata=metadata,
+            job_context=job_ctx,
+        )
+    except Exception:
+        pass
+
 
 def load_draft(user_id: str, session_id: str) -> tuple[Profile, dict[str, Any]]:
     """Load the current active draft profile and metadata."""

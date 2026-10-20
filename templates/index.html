@@ -35,6 +35,38 @@
         })();
     </script>
 
+    <!-- Firebase: client-side SDK config injected by Flask from .env vars.
+         The config object below contains only *public* identifiers — no
+         server secrets.  Security is enforced by Firebase Security Rules. -->
+    <script type="module">
+        const firebaseConfig = {{ firebase_config | tojson }};
+
+        const { initializeApp }   = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+        const { getAnalytics }    = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js");
+        const { getAuth, signOut } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+
+        const firebaseApp = initializeApp(firebaseConfig);
+        const auth        = getAuth(firebaseApp);
+        window.__firebaseApp = firebaseApp;
+        window.__fbAuth      = auth;
+
+        if (firebaseConfig.measurementId) {
+            getAnalytics(firebaseApp);
+        }
+
+        // Global sign-out: clear Flask session then Firebase local state.
+        window.__signOut = async function() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                await signOut(auth);
+            } finally {
+                window.location.href = '/login';
+            }
+        };
+
+        console.debug("[BuildR] Firebase SDK ready for project:", firebaseConfig.projectId);
+    </script>
+
     <!-- Our stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -45,6 +77,18 @@
     <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
         <i data-lucide="sun" class="theme-icon sun-icon"></i>
         <i data-lucide="moon" class="theme-icon moon-icon"></i>
+    </button>
+
+    <!-- Logout button — shown in the top-right corner -->
+    <button
+        type="button"
+        id="logout-btn"
+        class="logout-btn"
+        aria-label="Sign out"
+        title="Sign out"
+        onclick="window.__signOut && window.__signOut()"
+    >
+        <i data-lucide="log-out"></i>
     </button>
 
 

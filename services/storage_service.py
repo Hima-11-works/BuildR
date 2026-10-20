@@ -81,74 +81,59 @@ def user_profile_path(user_id: str) -> Path:
     return user_root(user_id) / "profile.json"
 
 
+import logging
+from services import firestore_service
+
+logger = logging.getLogger(__name__)
+
+
 def load_profile(user_id: str) -> Profile:
     """
-    Read the user's profile from disk and return a validated
-    Profile object.
+    Read the user's profile from Firestore (or local disk fallback)
+    and return a validated Profile object.
 
-    If the file doesn't exist yet (first run for this user),
-    returns a blank Profile with safe defaults — no crash, no
-    special setup.
-
-    Parameters
-    ----------
-    user_id : str
-        The authenticated user's id. Comes from
-        auth_service.current_user_id() after @require_auth.
-
-    Raises
-    ------
-    pydantic.ValidationError
-        If profile.json exists but contains data that violates
-        the schema (e.g., missing required fields, wrong types).
-        This is intentional — we WANT a loud failure here so the
-        user (or developer) knows the file needs fixing.
-
-    json.JSONDecodeError
-        If profile.json exists but isn't valid JSON.
+    First checks Firestore. If not found or if Firestore is
+    unavailable, falls back to storage/users/<user_id>/profile.json.
+    If neither exists yet (first run for this user), returns a blank
+    Profile with safe defaults.
     """
+    # ── 1. Attempt to load from Firestore ─────────────────────
+    try:
+        firestore_data = firestore_service.load_user_profile(user_id)
+        if firestore_data:
+            profile = Profile.model_validate(firestore_data)
+            # Sync to local cache so offline/fallback stays updated
+            try:
+                profile_path = user_profile_path(user_id)
+                profile_path.write_text(profile.model_dump_json(indent=2), encoding="utf-8")
+            except Exception as cache_exc:
+                logger.debug("Could not update local profile cache: %s", cache_exc)
+            return profile
+    except Exception as exc:
+        logger.warning("Could not read profile from Firestore for user %s: %s", user_id, exc)
 
+    # ── 2. Fallback to local filesystem ───────────────────────
     profile_path = user_profile_path(user_id)
     if not profile_path.exists():
-        # ── First run: return empty defaults ──────────────────
-        # Profile's default_factory fields produce a valid
-        # (but empty) profile automatically.
         return Profile()
 
-    # ── Read the raw JSON ─────────────────────────────────────
     raw_text = profile_path.read_text(encoding="utf-8")
     raw_data = json.loads(raw_text)
-
-    # ── Validate and build the Profile ────────────────────────
-    # model_validate() is the recommended Pydantic v2 method.
-    # It accepts a dict and returns a fully validated model, or
-    # raises ValidationError with every problem it found.
     profile = Profile.model_validate(raw_data)
+
+    # If profile exists locally but wasn't in Firestore, sync it
+    try:
+        firestore_service.save_user_profile(user_id, profile.model_dump())
+    except Exception as sync_exc:
+        logger.debug("Background sync to Firestore skipped: %s", sync_exc)
 
     return profile
 
 
 def save_profile(user_id: str, profile: Profile) -> None:
     """
-    Validate a Profile object and write it to disk as JSON.
-
-    Parameters
-    ----------
-    user_id : str
-        The authenticated user's id.
-    profile : Profile
-        The profile to persist.  Even though it's already a
-        Pydantic model, we re-validate to catch any in-memory
-        mutations that might have broken invariants.
-
-    Why re-validate on save?
-    ------------------------
-    Python objects are mutable.  Between load and save, any code
-    could do:
-        profile.personal_info.name = ""   # violates min_length=1
-        profile.education[0].gpa = -1.0   # violates ge=0.0
-
-    Re-validating ensures we never write garbage to disk.
+    Validate a Profile object, write it to local disk as JSON,
+    and persist the profile data values to Firestore.
     """
 
     # ── Populate Metadata Timestamps ──────────────────────────
@@ -159,21 +144,15 @@ def save_profile(user_id: str, profile: Profile) -> None:
     profile.metadata.version = 1
 
     # ── Re-validate the entire profile tree ───────────────────
-    # model_validate() on an existing model instance triggers
-    # a full re-check of every field and nested model.
-    # If anything is wrong, this line raises ValidationError.
     validated = Profile.model_validate(profile.model_dump())
 
-    # ── Serialize to a clean JSON string ──────────────────────
-    # model_dump_json() produces a JSON string directly.
-    # indent=2 makes the file human-readable (easy to inspect
-    # and debug).  The slight file-size cost is irrelevant for
-    # a single profile document.
+    # ── 1. Write to local disk cache ──────────────────────────
     json_string = validated.model_dump_json(indent=2)
-
-    # ── Write atomically-ish ──────────────────────────────────
-    # For a personal tool, write_text is fine.  In a production
-    # system, you'd write to a temp file and rename (atomic swap)
-    # to prevent corruption from partial writes.
     profile_path = user_profile_path(user_id)
     profile_path.write_text(json_string, encoding="utf-8")
+
+    # ── 2. Persist to Firestore ───────────────────────────────
+    try:
+        firestore_service.save_user_profile(user_id, validated.model_dump())
+    except Exception as exc:
+        logger.warning("Failed to persist profile to Firestore for user %s: %s", user_id, exc)

@@ -5,6 +5,8 @@
 # ── Secrets ──────────────────────────────────────────────────
 # .env holds API keys and other secrets.  NEVER commit this.
 .env
+*serviceAccountKey*.json
+*service-account*.json
 
 # ── Python bytecode cache ────────────────────────────────────
 # Python compiles .py → .pyc into __pycache__/ for speed.

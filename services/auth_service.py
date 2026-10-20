@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-# services/auth_service.py — Per-user filesystem layout
+# services/auth_service.py — Per-user filesystem layout + session helpers
 # ──────────────────────────────────────────────────────────────
 #
 # WHAT THIS FILE DOES
@@ -11,16 +11,30 @@
 #   • user_root(user_id)                → <project>/storage/users/<id>
 #   • cleanup_expired_sessions_for_all_users()
 #
-# All sign-in / sign-up / sign-out code has been removed.  The app
-# operates in single-user mode with a fixed DEFAULT_USER_ID defined
-# in app.py.
+# AUTH SESSION HELPERS
+# --------------------
+# After a Firebase ID token is verified by /api/auth/login, the Flask
+# session stores two keys:
+#
+#   session["uid"]  – the Firebase UID (used as the filesystem user_id)
+#   session["user"] – a dict with display info: name, email, picture
+#
+# These helpers centralise all session reads in one place:
+#
+#   current_user_id()  → str | None   (returns None if not logged in)
+#   current_user()     → dict | None  (returns None if not logged in)
+#   require_auth       → decorator    (aborts with 401 if not logged in)
 # ──────────────────────────────────────────────────────────────
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from pathlib import Path
+from typing import Callable
+
+from flask import session, jsonify
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +64,56 @@ def user_root(user_id: str) -> Path:
     path = USERS_ROOT / user_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+# ── Session helpers ───────────────────────────────────────────
+
+def current_user_id() -> str | None:
+    """
+    Return the Firebase UID stored in the Flask session, or None
+    if the user is not authenticated.
+
+    This is the canonical way every route handler should obtain the
+    user_id — never read session["uid"] directly.
+    """
+    return session.get("uid")
+
+
+def current_user() -> dict | None:
+    """
+    Return the user info dict stored in the Flask session, or None
+    if the user is not authenticated.
+
+    The dict contains at minimum: name, email, picture.
+    """
+    return session.get("user")
+
+
+def require_auth(f: Callable) -> Callable:
+    """
+    Route decorator that enforces authentication.
+
+    If the request has no valid session:
+      • Returns HTTP 401 JSON for API routes (paths starting with /api/).
+      • Redirects to /login for all other routes.
+
+    Usage::
+
+        @app.route("/api/profile")
+        @require_auth
+        def api_get_profile():
+            uid = current_user_id()
+            ...
+    """
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if current_user_id() is None:
+            from flask import request, redirect, url_for
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required.", "code": "UNAUTHENTICATED"}), 401
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ── Cross-user startup cleanup ────────────────────────────────

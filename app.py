@@ -1,43 +1,45 @@
-# ──────────────────────────────────────────────────────────────
-# app.py — Application entry-point for the Resume Generator
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# app.py â€” Application entry-point for BuildR
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #
 # PURPOSE
 # -------
 # This is the *single* file you run to start the web server.
 # It wires together configuration, routes, and services.
 #
-# SINGLE-USER MODE
-# ----------------
-# All routes operate on a single shared DEFAULT_USER_ID.  There is
-# no sign-in, sign-up, or sign-out — the app is open to anyone who
-# can reach it.
+# AUTH MODE
+# ---------
+# All routes are protected by Firebase Google authentication.
+# Unauthenticated requests are redirected to /login (HTML) or
+# receive a 401 JSON response (API routes).  The Firebase UID is
+# stored in a signed Flask session and used as the user_id for all
+# filesystem-scoped operations.
 #
 # ROUTE MAP
 # ---------
-#   GET  /                       → Serves the SPA
-#   GET  /favicon.ico            → Favicon
-#   GET/PUT /api/profile         → master profile (read/write)
-#   POST /api/profile/parse      → upload + AI parse of a resume file
-#   POST /api/resume/master      → generate master PDF
-#   POST /api/scrape-job         → fetch + extract a job posting URL
-#   POST /api/analyze-job        → AI-extract skills/keywords
-#   POST /api/tailor/start       → start tailoring workspace
-#   POST /api/tailor/chat        → refine draft via AI
-#   POST /api/tailor/snapshot    → save named snapshot of draft
-#   POST /api/tailor/restore     → restore a snapshot
-#   POST /api/tailor/save        → save draft to library
-#   GET/PUT /api/tailor/draft/<id> → fetch / edit active draft
-#   POST /api/tailor/download/<id>  → compile + download draft
-#   GET /api/tailor/preview/<id>/...→ on-the-fly PDF preview
-#   POST /api/resume/tailored    → one-shot tailored PDF
-#   GET /api/resumes             → list user's library
-#   GET /api/resumes/<id>/pdf    → download PDF
-#   GET /api/resumes/<id>/tex    → download LaTeX source
-#   DELETE /api/resumes/<id>     → delete resume
-#   PATCH /api/resumes/<id>      → rename
-#   POST /api/resumes/<id>/duplicate → duplicate
-# ──────────────────────────────────────────────────────────────
+#   GET  /                       â†’ Serves the SPA
+#   GET  /favicon.ico            â†’ Favicon
+#   GET/PUT /api/profile         â†’ master profile (read/write)
+#   POST /api/profile/parse      â†’ upload + AI parse of a resume file
+#   POST /api/resume/master      â†’ generate master PDF
+#   POST /api/scrape-job         â†’ fetch + extract a job posting URL
+#   POST /api/analyze-job        â†’ AI-extract skills/keywords
+#   POST /api/tailor/start       â†’ start tailoring workspace
+#   POST /api/tailor/chat        â†’ refine draft via AI
+#   POST /api/tailor/snapshot    â†’ save named snapshot of draft
+#   POST /api/tailor/restore     â†’ restore a snapshot
+#   POST /api/tailor/save        â†’ save draft to library
+#   GET/PUT /api/tailor/draft/<id> â†’ fetch / edit active draft
+#   POST /api/tailor/download/<id>  â†’ compile + download draft
+#   GET /api/tailor/preview/<id>/...â†’ on-the-fly PDF preview
+#   POST /api/resume/tailored    â†’ one-shot tailored PDF
+#   GET /api/resumes             â†’ list user's library
+#   GET /api/resumes/<id>/pdf    â†’ download PDF
+#   GET /api/resumes/<id>/tex    â†’ download LaTeX source
+#   DELETE /api/resumes/<id>     â†’ delete resume
+#   PATCH /api/resumes/<id>      â†’ rename
+#   POST /api/resumes/<id>/duplicate â†’ duplicate
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import io
 import json
@@ -47,7 +49,11 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, send_file
+
+# ── Load environment variables from .env before any services import ──
+load_dotenv()
+
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from pydantic import ValidationError
 
 from models.profile import Profile
@@ -59,17 +65,17 @@ from services.resume_library import (
     save_resume, list_resumes, get_resume_path, delete_resume, delete_resumes_by_type,
     rename_resume, duplicate_resume,
 )
-from services.auth_service import cleanup_expired_sessions_for_all_users
+from services.auth_service import (
+    cleanup_expired_sessions_for_all_users,
+    current_user_id,
+    require_auth,
+)
+from services.firebase_service import (
+    get_client_config as _get_firebase_client_config,
+    verify_id_token as _verify_firebase_token,
+)
 
-# ── Single-user mode ─────────────────────────────────────────
-# Every route uses this fixed user_id — no sign-in required.
-DEFAULT_USER_ID = "default"
-
-# ── Step 1: Load environment variables from .env ─────────────
-# load_dotenv() reads the .env file in the project root and
-# injects each KEY=VALUE pair into os.environ.  This keeps
-# secrets out of source code.
-load_dotenv()
+DEFAULT_USER_ID = "default_user"
 
 from services.ai_service import (
     tailor_resume, parse_resume_text, analyze_job_description,
@@ -80,15 +86,15 @@ from services.parser_service import extract_text_from_pdf, extract_text_from_doc
 from services._diagnostics import instrument_step, log_event
 import services.session_service as session_service
 
-# ── Step 2: Create the Flask application instance ────────────
+# â”€â”€ Step 2: Create the Flask application instance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Flask(__name__) uses the location of THIS module to determine:
-#   • templates/  → folder for Jinja2 HTML templates
-#   • static/     → folder for CSS, JS, images served at /static/
+#   â€¢ templates/  â†’ folder for Jinja2 HTML templates
+#   â€¢ static/     â†’ folder for CSS, JS, images served at /static/
 # You can override these with template_folder= and static_folder=
 # parameters, but the defaults work perfectly for our layout.
 app = Flask(__name__)
 
-# ── Request size cap ──────────────────────────────────────────
+# â”€â”€ Request size cap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Applies to every route (resume uploads, pasted job descriptions, profile
 # saves). Without it, request.files["file"].read() / request.get_json() in
 # the upload and parse routes below would buffer an arbitrarily large body
@@ -97,14 +103,19 @@ app = Flask(__name__)
 # Flask returns a 413 automatically once this is exceeded.
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
 
-# Secret key for Flask session — still needed for CSRF-safe forms
-# even though we no longer use signed auth cookies.
+# Secret key signs the Flask session cookie â€” critical for auth security.
+# Generate a strong key: python -c "import secrets; print(secrets.token_hex(32))"
 app.secret_key = os.getenv("SECRET_KEY", "dev-fallback-key")
 
-# ── Startup cleanup ──────────────────────────────────────────
+# â”€â”€ Session cookie hardening â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("FLASK_ENV", "development") == "production"
+
+# â”€â”€ Startup cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Sweep out abandoned tailoring sessions older than a week for
 # every user.  These are scratch workspace state, not permanent
-# records — finished resumes live independently in the Resume Library.
+# records â€” finished resumes live independently in the Resume Library.
 # This runs at module-import time so it executes under both
 # `python app.py` and `gunicorn app:app`.  The operation is idempotent
 # (rmtree with ignore_errors=True), so concurrent Gunicorn workers
@@ -114,6 +125,27 @@ if _removed:
     print(f"Cleaned up {_removed} expired tailoring session(s).")
 
 
+# â”€â”€ Authentication guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Called before every request.  Allows through:
+#   â€¢ Static assets  (/static/...)
+#   â€¢ The login page (/login)
+#   â€¢ The auth API   (/api/auth/...)
+# All other requests require a valid session["uid"].
+_PUBLIC_PREFIXES = ("/static/", "/favicon.ico")
+_PUBLIC_PATHS    = {"/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me"}
+
+
+@app.before_request
+def _require_login():
+    path = request.path
+    if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return  # Allow unauthenticated access.
+    if current_user_id() is None:
+        if path.startswith("/api/"):
+            return jsonify({"error": "Authentication required.", "code": "UNAUTHENTICATED"}), 401
+        return redirect(url_for("login"))
+
+
 @app.errorhandler(413)
 def handle_request_too_large(e):
     return jsonify({
@@ -121,19 +153,88 @@ def handle_request_too_large(e):
     }), 413
 
 
-# ── Step 3: Define routes ────────────────────────────────────
+# â”€â”€ Step 3: Define routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route("/")
 def index():
     """
-    Home page — serves the profile editor interface.
-
-    render_template("index.html") tells Flask:
-      1. Look in the templates/ directory (resolved from __name__).
-      2. Find index.html.
-      3. Run it through the Jinja2 engine (so {{ }} expressions work).
-      4. Return the rendered HTML string as an HTTP response.
+    Home page â€” serves the profile editor SPA.
+    Protected by the before_request guard; unauthenticated visitors
+    are redirected to /login before this function is ever called.
     """
-    return render_template("index.html")
+    return render_template("index.html", firebase_config=_get_firebase_client_config())
+
+
+# â”€â”€ Auth routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@app.route("/login")
+def login():
+    """
+    Serve the login page.
+    If the user already has a valid session, redirect straight to the app.
+    """
+    if current_user_id() is not None:
+        return redirect(url_for("index"))
+    return render_template("login.html", firebase_config=_get_firebase_client_config())
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    """
+    Exchange a Firebase ID token for a server-side Flask session.
+
+    Flow:
+      1. Browser completes Google Sign-In popup via Firebase JS SDK.
+      2. Client POSTs { "id_token": "<jwt>" } to this endpoint.
+      3. We verify the JWT with the Firebase Admin SDK.
+      4. On success, write uid + display info to the signed Flask session.
+      5. Return { "status": "ok", "user": { name, email, picture } }.
+    """
+    data = request.get_json()
+    if not data or not data.get("id_token"):
+        return jsonify({"error": "Missing id_token."}), 400
+
+    try:
+        decoded = _verify_firebase_token(data["id_token"])
+    except Exception as exc:
+        return jsonify({"error": f"Invalid token: {exc}"}), 401
+
+    uid = decoded["uid"]
+    user_info = {
+        "name":    decoded.get("name", ""),
+        "email":   decoded.get("email", ""),
+        "picture": decoded.get("picture", ""),
+    }
+
+    session["uid"]  = uid
+    session["user"] = user_info
+    session["id_token"] = data["id_token"]
+    session.permanent = True  # Honor PERMANENT_SESSION_LIFETIME (default 31 days)
+
+    return jsonify({"status": "ok", "user": user_info})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    """
+    Clear the server-side Flask session.
+    The client should also call firebase.auth().signOut() to clear
+    the Firebase local state in the browser.
+    """
+    session.clear()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def api_auth_me():
+    """
+    Return the currently authenticated user from the session.
+    Used by the frontend to restore auth state after a page reload.
+    """
+    uid = current_user_id()
+    if uid is None:
+        return jsonify({"authenticated": False}), 401
+    from services.auth_service import current_user
+    return jsonify({"authenticated": True, "uid": uid, "user": current_user()})
 
 
 @app.route("/favicon.ico")
@@ -148,9 +249,9 @@ def favicon():
     return app.send_static_file("favicon.ico")
 
 
-# ── JSON API ─────────────────────────────────────────────────
+# â”€â”€ JSON API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # These two routes form a simple REST-style API.  The frontend
-# JavaScript uses fetch() to talk to them — no page reloads,
+# JavaScript uses fetch() to talk to them â€” no page reloads,
 # no form submissions.  Data travels as JSON in both directions.
 #
 # WHY SEPARATE API ROUTES?
@@ -158,9 +259,10 @@ def favicon():
 # The /api/ routes serve JSON (for JavaScript code).
 # Keeping them separate means the same API could later be used
 # by a mobile app, a CLI tool, or any other client.
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/api/profile", methods=["GET"])
+@require_auth
 def api_get_profile():
     """
     Return the current user's profile as JSON.
@@ -180,7 +282,7 @@ def api_get_profile():
         }
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         profile = load_profile(user_id)
         profile_dict = profile.model_dump()
 
@@ -197,6 +299,7 @@ def api_get_profile():
 
 
 @app.route("/api/profile", methods=["PUT"])
+@require_auth
 def api_put_profile():
     """
     Accept a JSON profile, validate it, and save it to the current
@@ -219,22 +322,22 @@ def api_put_profile():
     """
     data = request.get_json()
 
-    # ── Guard: no JSON body at all ────────────────────────────
+    # â”€â”€ Guard: no JSON body at all â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if data is None:
         return jsonify({"error": "Request body must be JSON"}), 400
 
     try:
-        # ── Validate through Pydantic ─────────────────────────
+        # â”€â”€ Validate through Pydantic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         profile = Profile.model_validate(data)
 
-        # ── Persist to disk under this user's directory ───────
-        user_id = DEFAULT_USER_ID
+        # â”€â”€ Persist to disk under this user's directory â”€â”€â”€â”€â”€â”€â”€
+        user_id = current_user_id()
         save_profile(user_id, profile)
 
         return jsonify({"status": "ok"})
 
     except ValidationError as e:
-        # ── Extract structured errors ─────────────────────────
+        # â”€â”€ Extract structured errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         errors = []
         for err in e.errors():
             errors.append({
@@ -247,14 +350,15 @@ def api_put_profile():
 
 
 @app.route("/api/profile/parse", methods=["POST"])
+@require_auth
 def api_parse_resume():
     """
     Accept a PDF or DOCX file, extract text, call Gemini to parse it
     into a Profile model, and return the parsed JSON to the caller.
 
-    ── INSTRUMENTATION ──
+    â”€â”€ INSTRUMENTATION â”€â”€
     Every step in this route is wrapped with `instrument_step()` from
-    services/_diagnostics.py. The instrumentation ONLY logs — it does
+    services/_diagnostics.py. The instrumentation ONLY logs â€” it does
     not change behavior. Each step logs `[parse-trace] START`/`END`
     with RSS memory + elapsed time + step-specific metrics. Lines are
     prefixed `[parse-trace]` so they're easy to grep from Render logs.
@@ -274,7 +378,7 @@ def api_parse_resume():
               content_length_header=request.content_length)
 
     try:
-        # ── Step 1: read uploaded file into memory ───────────────
+        # â”€â”€ Step 1: read uploaded file into memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # NOTE: file.read() consumes the Werkzeug FileStorage stream.
         # We keep a reference to the raw bytes AND wrap in BytesIO so
         # the parser gets a seekable stream.
@@ -288,7 +392,7 @@ def api_parse_resume():
         if not raw_bytes:
             return jsonify({"error": "The uploaded file is empty."}), 400
 
-        # ── Step 2: extract text ─────────────────────────────────
+        # â”€â”€ Step 2: extract text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         file_stream = io.BytesIO(raw_bytes)
         is_pdf = filename.endswith(".pdf")
         with instrument_step(
@@ -306,19 +410,19 @@ def api_parse_resume():
         if not text.strip():
             return jsonify({"error": "The uploaded file contains no readable text."}), 400
 
-        # ── Step 3: parse via Gemini (build prompt + API call + parse + validate) ──
+        # â”€â”€ Step 3: parse via Gemini (build prompt + API call + parse + validate) â”€â”€
         with instrument_step("parse_resume_text_total",
                              text_length=len(text),
                              text_kb=round(len(text) / 1024, 1)):
             parsed_profile = parse_resume_text(text)
 
-        # ── Step 4: resume cleanup (achievements/certs → HTML lists) ──
+        # â”€â”€ Step 4: resume cleanup (achievements/certs â†’ HTML lists) â”€â”€
         from services.parser_service import postprocess_parsed_profile
         with instrument_step("postprocess_parsed_profile",
                              profile_id=getattr(parsed_profile, "id", "?")):
             postprocess_parsed_profile(parsed_profile)
 
-        # ── Step 5: profile serialization for the HTTP response ──
+        # â”€â”€ Step 5: profile serialization for the HTTP response â”€â”€
         with instrument_step("profile_model_dump"):
             serialized = parsed_profile.model_dump()
         log_event("after_serialization",
@@ -331,7 +435,7 @@ def api_parse_resume():
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
 
 
-# ── Resume Generation API ────────────────────────────────────
+# â”€â”€ Resume Generation API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # This route orchestrates the entire document pipeline:
 #   1. Load the saved profile from disk
 #   2. Render it into a LaTeX .tex string (with escaping)
@@ -343,7 +447,7 @@ def api_parse_resume():
 # operation (it writes files to disk and spawns a subprocess).
 # POST is the correct HTTP verb for "perform an action",
 # while GET is for "retrieve existing data".
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @contextmanager
@@ -359,7 +463,7 @@ def _isolated_compile(tex_string: str):
     directory at the same time, one request's in-flight .tex/.pdf could
     be clobbered by the other before save_resume() gets a chance to copy
     it out. Compiling into a private per-request temp directory
-    (auto-cleaned on exit) eliminates that race entirely — the shared
+    (auto-cleaned on exit) eliminates that race entirely â€” the shared
     resume library directory is only ever touched by save_resume(),
     which writes into a unique, freshly-made resume_id folder.
     """
@@ -368,23 +472,24 @@ def _isolated_compile(tex_string: str):
 
 
 @app.route("/api/resume/master", methods=["POST"])
+@require_auth
 def api_generate_master_resume():
     """
     Generate the master resume as a PDF for the current user.
 
     PIPELINE (with intelligent one-page optimization)
     --------------------------------------------------
-    1. load_profile(user_id)             → Profile from this user's profile.json
-    2. First-pass render + compile        → page count
-       a. If 1 page → save as-is. Done.
-       b. If 2+ pages → run content optimizer, then re-render in
+    1. load_profile(user_id)             â†’ Profile from this user's profile.json
+    2. First-pass render + compile        â†’ page count
+       a. If 1 page â†’ save as-is. Done.
+       b. If 2+ pages â†’ run content optimizer, then re-render in
           compact mode (tighter section spacing), recompile.
        c. If the optimized version is <= the original page count
-          AND either fits on 1 page now or stayed ≤ original pages,
+          AND either fits on 1 page now or stayed â‰¤ original pages,
           use the optimized version. The user's stored profile is
           NOT modified.
     3. delete_resumes_by_type + save_resume
-       → user-scoped — replaces any prior "Master" entry.
+       â†’ user-scoped â€” replaces any prior "Master" entry.
 
     We do NOT iteratively re-optimize. If the resume is still 2
     pages after one optimization pass, we keep the optimized
@@ -392,19 +497,19 @@ def api_generate_master_resume():
     the second page happen. Readability beats page count.
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
 
-        # ── Step 1: Load the profile ──────────────────────────
+        # â”€â”€ Step 1: Load the profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         profile = load_profile(user_id)
 
-        # ── Guard: don't generate a resume with no name ───────
+        # â”€â”€ Guard: don't generate a resume with no name â”€â”€â”€â”€â”€â”€â”€
         if not profile.personal_info.name.strip():
             return jsonify({
                 "error": "Your profile has no name. "
                          "Please fill in at least your name before generating."
             }), 400
 
-        # ── Step 2: First-pass render + compile ───────────────
+        # â”€â”€ Step 2: First-pass render + compile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         tex_string = render_latex(profile)
         optimization_changes: list[str] = []
 
@@ -420,10 +525,10 @@ def api_generate_master_resume():
             first_pages = count_pdf_pages(first_pdf)
 
             if first_pages == 1:
-                # ── Already fits — use the first pass ─────────
+                # â”€â”€ Already fits â€” use the first pass â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 final_pdf_bytes = first_pdf.read_bytes()
             else:
-                # ── Multi-page — try the optimization pass ──────
+                # â”€â”€ Multi-page â€” try the optimization pass â”€â”€â”€â”€â”€â”€
                 optimized_profile, changes = optimize_profile(profile)
                 optimization_changes = changes
 
@@ -436,7 +541,7 @@ def api_generate_master_resume():
                         second_pages = count_pdf_pages(second_pdf)
 
                         if second_pages == 1:
-                            # Won — fits on one page after optimization.
+                            # Won â€” fits on one page after optimization.
                             final_tex = tex_string_opt
                             final_pdf_bytes = second_pdf.read_bytes()
                         elif second_pages <= first_pages:
@@ -450,11 +555,11 @@ def api_generate_master_resume():
                             # the first pass.
                             final_pdf_bytes = first_pdf.read_bytes()
 
-        # ── Step 3: Persist to the user's library ─────────────
+        # â”€â”€ Step 3: Persist to the user's library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # Write the captured PDF bytes to a stable temp file so
         # save_resume has a real path to copy from. We delete the
         # previous Master entry FIRST so a fresh master replaces any
-        # older one (matches the original behavior — see
+        # older one (matches the original behavior â€” see
         # test_regenerating_master_resume_does_not_duplicate_library_entry).
         delete_resumes_by_type(user_id, "master")
 
@@ -501,7 +606,7 @@ def api_generate_master_resume():
         }), 500
 
 
-# ── Tailored Resume Generation API (AI-powered) ─────────────
+# â”€â”€ Tailored Resume Generation API (AI-powered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # This route is the AI-powered counterpart of /api/resume/master.
 # Instead of rendering the full profile as-is, it:
 #   1. Loads the saved profile from disk.
@@ -509,23 +614,23 @@ def api_generate_master_resume():
 #   3. Gemini returns structured JSON (not LaTeX!) describing
 #      which items to include and how to rewrite them.
 #   4. Converts that JSON to a Profile and renders it through
-#      the same LaTeX → PDF pipeline.
+#      the same LaTeX â†’ PDF pipeline.
 #
 # THE "AI DECIDES, CODE RENDERS" PATTERN
-# ──────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # The AI never sees or produces LaTeX.  It only decides WHAT
 # content to include and HOW to phrase it.  Our code handles
-# all rendering — escaping, templating, compilation.
+# all rendering â€” escaping, templating, compilation.
 #
 # This is more reliable than asking the AI to produce LaTeX
 # because:
-#   • Constrained decoding guarantees valid JSON output.
-#   • Any LaTeX typo (unmatched brace, missing \) would crash
+#   â€¢ Constrained decoding guarantees valid JSON output.
+#   â€¢ Any LaTeX typo (unmatched brace, missing \) would crash
 #     the compiler.  JSON can't have such issues.
-#   • We can validate the AI's output with Pydantic before
+#   â€¢ We can validate the AI's output with Pydantic before
 #     even touching LaTeX.
-#   • The template can change without rewriting the AI prompt.
-# ──────────────────────────────────────────────────────────────
+#   â€¢ The template can change without rewriting the AI prompt.
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/api/scrape-job", methods=["POST"])
 def api_scrape_job():
@@ -610,7 +715,7 @@ def api_tailor_start():
         return jsonify({"error": "Job description is required."}), 400
 
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         profile = load_profile(user_id)
         if not profile.personal_info.name.strip():
             return jsonify({"error": "Your profile has no name. Please create a Master Resume first."}), 400
@@ -674,7 +779,7 @@ def api_tailor_chat():
     if not data or "session_id" not in data or "message" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     session_id = data["session_id"]
     message = data["message"].strip()
 
@@ -735,7 +840,7 @@ def api_tailor_snapshot():
     if not data or "session_id" not in data or "name" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     session_id = data["session_id"]
     snapshot_name = data["name"].strip()
 
@@ -760,7 +865,7 @@ def api_tailor_restore():
     if not data or "session_id" not in data or "snapshot_id" not in data:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     session_id = data["session_id"]
     snapshot_id = data["snapshot_id"]
 
@@ -787,7 +892,7 @@ def api_tailor_save():
     if not data or "session_id" not in data:
         return jsonify({"error": "Missing session_id parameter."}), 400
 
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     session_id = data["session_id"]
     try:
         profile, _ = session_service.load_draft(user_id, session_id)
@@ -800,7 +905,7 @@ def api_tailor_save():
         # Extract a filesystem safe label
         label = job_description[:60].strip()
         if len(job_description) > 60:
-            label += "…"
+            label += "â€¦"
 
         # Compile to PDF (isolated per-request dir) and persist
         with _isolated_compile(tex_string) as pdf_path:
@@ -829,7 +934,7 @@ def api_tailor_get_draft(session_id):
     Return the user's current active draft profile and AI metadata
     for the workspace editor.
     """
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     try:
         profile, metadata = session_service.load_draft(user_id, session_id)
         return jsonify({
@@ -858,7 +963,7 @@ def api_tailor_update_draft(session_id):
     draft: the user's manual edits are persisted here, and when the AI chat
     endpoint runs next, it calls load_draft() and sees those edits.
     """
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     data = request.get_json()
     if not data or "profile" not in data:
         return jsonify({"error": "Missing profile data."}), 400
@@ -896,15 +1001,15 @@ def api_tailor_download(session_id):
     Generate and download a PDF from the user's latest active draft.
 
     Pipeline:
-    1. load_draft() → Profile (includes all manual + AI edits)
-    2. render_latex() → .tex string
-    3. compile_pdf() → .pdf file
-    4. save_resume() → persist to user's library
-    5. send_file() → return PDF as attachment download
+    1. load_draft() â†’ Profile (includes all manual + AI edits)
+    2. render_latex() â†’ .tex string
+    3. compile_pdf() â†’ .pdf file
+    4. save_resume() â†’ persist to user's library
+    5. send_file() â†’ return PDF as attachment download
 
     The downloaded PDF always reflects the latest state of the editor.
     """
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     try:
         profile, _ = session_service.load_draft(user_id, session_id)
         job_context = session_service.load_job_context(user_id, session_id)
@@ -916,7 +1021,7 @@ def api_tailor_download(session_id):
         # Build a label from the job description
         label = job_description[:60].strip()
         if len(job_description) > 60:
-            label += "…"
+            label += "â€¦"
 
         # Compile (isolated per-request dir) and persist to library
         with _isolated_compile(tex_string) as pdf_path:
@@ -959,7 +1064,7 @@ def api_tailor_preview(session_id, version_type, version_id):
     draft or snapshot, meaning we never store intermediate PDF files
     permanently on disk.
     """
-    user_id = DEFAULT_USER_ID
+    user_id = current_user_id()
     try:
         profile = None
         if version_type == "draft":
@@ -984,7 +1089,7 @@ def api_tailor_preview(session_id, version_type, version_id):
             # a Response whose file object is still open when this `with`
             # block exits (temp dir deletion happens as part of unwinding
             # the `return` statement, before the WSGI layer has streamed the
-            # body) — on Windows that's a guaranteed PermissionError trying
+            # body) â€” on Windows that's a guaranteed PermissionError trying
             # to delete a file that's still open; on other platforms it's a
             # latent race either way. Serving from an in-memory BytesIO has
             # no such lifetime dependency.
@@ -1011,12 +1116,12 @@ def api_generate_tailored_resume():
 
     EXPECTS
     -------
-    JSON body — at least one of:
+    JSON body â€” at least one of:
         { "job_description": "<pasted job posting text>" }
         { "job_url": "https://careers.example.com/posting/12345" }
 
     If both are provided, job_description (pasted text) takes priority
-    because it's the reliable path — the user already has the text.
+    because it's the reliable path â€” the user already has the text.
 
     If only job_url is given, we attempt to scrape the page.
 
@@ -1024,11 +1129,11 @@ def api_generate_tailored_resume():
     --------
     1. Parse the job description from the request body (text or URL).
     2. Load the user's saved profile from disk.
-    3. Send both to Gemini → get back a TailoredProfile (JSON).
-    4. Convert TailoredProfile → Profile (for rendering).
-    5. Render LaTeX → compile PDF → save to user's library.
+    3. Send both to Gemini â†’ get back a TailoredProfile (JSON).
+    4. Convert TailoredProfile â†’ Profile (for rendering).
+    5. Render LaTeX â†’ compile PDF â†’ save to user's library.
     """
-    # ── Step 1: Get the job description (text or URL) ─────────
+    # â”€â”€ Step 1: Get the job description (text or URL) â”€â”€â”€â”€â”€â”€â”€â”€â”€
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON."}), 400
@@ -1036,7 +1141,7 @@ def api_generate_tailored_resume():
     job_description = (data.get("job_description") or "").strip()
     job_url = (data.get("job_url") or "").strip()
 
-    # Text takes priority — it's the reliable path
+    # Text takes priority â€” it's the reliable path
     if not job_description:
         if job_url:
             try:
@@ -1049,31 +1154,31 @@ def api_generate_tailored_resume():
             }), 400
 
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
 
-        # ── Step 2: Load the user's profile ───────────────────
+        # â”€â”€ Step 2: Load the user's profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         profile = load_profile(user_id)
 
-        # ── Guard: don't tailor an empty profile ──────────────
+        # â”€â”€ Guard: don't tailor an empty profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if not profile.personal_info.name.strip():
             return jsonify({
                 "error": "Your profile has no name. "
                          "Please fill in your profile before tailoring."
             }), 400
 
-        # ── Step 3: Call Gemini for tailoring ─────────────────
+        # â”€â”€ Step 3: Call Gemini for tailoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         tailored = tailor_resume(profile, job_description)
 
-        # ── Step 4: Convert to Profile for rendering ─────────
+        # â”€â”€ Step 4: Convert to Profile for rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€
         tailored_profile = tailored.to_profile()
 
-        # ── Step 5: Render LaTeX ───────────────────────────────
+        # â”€â”€ Step 5: Render LaTeX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         tex_string = render_latex(tailored_profile)
 
-        # ── Step 6: Persist to the user's library ─────────────
+        # â”€â”€ Step 6: Persist to the user's library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         label = job_description[:60].strip()
         if len(job_description) > 60:
-            label += "…"
+            label += "â€¦"
 
         with _isolated_compile(tex_string) as pdf_path:
             resume_id = save_resume(
@@ -1112,12 +1217,12 @@ def api_generate_tailored_resume():
         }), 500
 
 
-# ── Resume Library API ───────────────────────────────────────
+# â”€â”€ Resume Library API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # These routes let the frontend browse, download, and delete
 # previously generated resumes.  Each resume is stored in its
 # own folder under storage/resumes/ with .tex, .pdf, and
 # metadata.json.
-# ──────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/api/resumes", methods=["GET"])
 def api_list_resumes():
@@ -1138,7 +1243,7 @@ def api_list_resumes():
     ]
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         resumes = list_resumes(user_id)
         return jsonify(resumes)
     except Exception as e:
@@ -1156,7 +1261,7 @@ def api_download_resume_pdf(resume_id):
     so a malformed id cannot reach another user's folder.
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         pdf_path = get_resume_path(user_id, resume_id, "pdf")
         return send_file(
             pdf_path,
@@ -1179,7 +1284,7 @@ def api_download_resume_tex(resume_id):
     saved resumes. Same safety checks as the PDF route.
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         tex_path = get_resume_path(user_id, resume_id, "tex")
         return send_file(
             tex_path,
@@ -1205,11 +1310,11 @@ def api_delete_resume(resume_id):
     delete_resume() uses resolve-and-verify to ensure the target path
     is inside the user's resumes dir. Path traversal attempts
     (e.g. "../../etc") are rejected with a 400. The user's id is also
-    derived from the signed session cookie — never from URL params —
+    derived from the signed session cookie â€” never from URL params â€”
     so a malicious client cannot supply a different user_id.
     """
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         delete_resume(user_id, resume_id)
         return jsonify({"status": "ok"})
     except ValueError as e:
@@ -1231,7 +1336,7 @@ def api_rename_resume(resume_id):
         return jsonify({"error": "Missing 'label' parameter."}), 400
 
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         meta = rename_resume(user_id, resume_id, data["label"])
         return jsonify({"status": "ok", "label": meta["label"]})
     except ValueError as e:
@@ -1250,7 +1355,7 @@ def api_duplicate_resume(resume_id):
     """
     data = request.get_json(silent=True) or {}
     try:
-        user_id = DEFAULT_USER_ID
+        user_id = current_user_id()
         new_id = duplicate_resume(user_id, resume_id, data.get("label"))
         return jsonify({"status": "ok", "id": new_id})
     except ValueError as e:
@@ -1261,7 +1366,7 @@ def api_duplicate_resume(resume_id):
         return jsonify({"error": f"Failed to duplicate resume: {str(e)}"}), 500
 
 
-# ── Step 4: Run the dev server ───────────────────────────────
+# â”€â”€ Step 4: Run the dev server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if __name__ == "__main__":
     # This block only executes when you run `python app.py` directly.
     # It will NOT run when a production server (gunicorn, etc.) imports the module.
@@ -1270,8 +1375,9 @@ if __name__ == "__main__":
     # in-browser debugger, which lets anyone who can reach the port
     # execute arbitrary Python via a shell in the traceback page. That's
     # fine on localhost during development but must never be the
-    # unconditional default — opt in explicitly with FLASK_DEBUG=1 (e.g.
+    # unconditional default â€” opt in explicitly with FLASK_DEBUG=1 (e.g.
     # in your .env file) rather than having it hardcoded on.
     debug_mode = os.getenv("FLASK_DEBUG", "0").strip().lower() in ("1", "true", "yes")
     port = int(os.getenv("PORT", "5000"))
     app.run(debug=debug_mode, port=port)
+

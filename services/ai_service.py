@@ -125,7 +125,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────
 
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-_DEFAULT_MODEL = "gemini-3.8-flash"
+_DEFAULT_MODEL = "gemini-2.5-flash"
 _DEFAULT_TIMEOUT_MS = 90_000
 
 _client: OpenAI | None = None
@@ -344,15 +344,36 @@ def _chat_json(
                          system_bytes=len(system) + len(_OUTPUT_FORMAT_INSTRUCTION),
                          user_bytes=len(user),
                          total_request_bytes=len(system) + len(_OUTPUT_FORMAT_INSTRUCTION) + len(user)):
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
-                {"role": "user", "content": user},
-            ],
-            response_format={"type": "json_object"},
-            temperature=temperature,
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
+                    {"role": "user", "content": user},
+                ],
+                response_format={"type": "json_object"},
+                temperature=temperature,
+            )
+        except Exception as api_err:
+            fallback = "gemini-2.5-flash"
+            if model != fallback:
+                logger.warning(
+                    "Model '%s' request failed (%s). Retrying with fallback model '%s'...",
+                    model,
+                    api_err,
+                    fallback,
+                )
+                response = client.chat.completions.create(
+                    model=fallback,
+                    messages=[
+                        {"role": "system", "content": system + _OUTPUT_FORMAT_INSTRUCTION},
+                        {"role": "user", "content": user},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=temperature,
+                )
+            else:
+                raise
     raw = (response.choices[0].message.content or "")
     log_event("after_api_response_received",
               raw_response_bytes=len(raw) if raw else 0)

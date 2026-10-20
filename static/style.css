@@ -196,6 +196,45 @@ body:not(.no-transition) .theme-toggle {
 }
 
 
+/* ── Logout Button ─────────────────────────────────────────── */
+.logout-btn {
+    position: fixed;
+    top: var(--space-lg);
+    right: calc(var(--space-lg) + 42px + 10px); /* sits left of theme toggle */
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    z-index: 5000;
+    padding: 0;
+    box-shadow: var(--shadow-card);
+    transition: transform var(--transition-fast), background-color var(--transition-fast),
+                border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.logout-btn:hover {
+    border-color: var(--border-accent);
+    background-color: var(--bg-surface);
+    color: var(--error);
+    transform: scale(1.05);
+}
+
+.logout-btn:active {
+    transform: scale(0.95);
+}
+
+.logout-btn i {
+    width: 17px;
+    height: 17px;
+}
+
+
 /* ── Header ────────────────────────────────────────────────── */
 .app-header {
     text-align: center;

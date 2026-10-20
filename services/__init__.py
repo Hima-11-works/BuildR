@@ -9,9 +9,10 @@
 #   • latex_service.py   — Renders LaTeX and compiles to PDF
 #   • pdf_service.py     — Wraps the Tectonic CLI
 #   • parser_service.py  — Extracts text from uploaded PDF/DOCX resumes
-#   • storage_service.py — Reads/writes the master profile JSON
-#   • session_service.py — Manages per-user tailoring workspaces
-#   • resume_library.py  — Catalogs generated resumes
+#   • storage_service.py   — Reads/writes the master profile JSON
+#   • firestore_service.py — Stores profile data and AI variations in Firestore (no PDFs)
+#   • session_service.py   — Manages per-user tailoring workspaces
+#   • resume_library.py    — Catalogs generated resumes
 #
 # Separating services from routes (app.py) follows the
 # "thin controller, fat service" pattern: routes only handle

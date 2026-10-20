@@ -96,4 +96,7 @@ def app_client(
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["uid"] = "default_user"
+            sess["user"] = {"name": "Test User", "email": "test@example.com"}
         yield client
