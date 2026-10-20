@@ -9,21 +9,22 @@
   <p align="center">
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python Version" /></a>
     <a href="https://flask.palletsprojects.com/"><img src="https://img.shields.io/badge/Flask-3.1%2B-000000?style=flat-square&logo=flask&logoColor=white" alt="Flask Framework" /></a>
-    <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Google%20Gemini-gemini--3.8--flash-8E75C2?style=flat-square&logo=google-gemini&logoColor=white" alt="Gemini AI" /></a>
+    <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Google%20Gemini-gemini--2.5--flash-8E75C2?style=flat-square&logo=google-gemini&logoColor=white" alt="Gemini AI" /></a>
+    <a href="https://firebase.google.com/"><img src="https://img.shields.io/badge/Firebase-Auth%20%26%20Firestore-FFCA28?style=flat-square&logo=firebase&logoColor=black" alt="Firebase Auth & Firestore" /></a>
     <a href="https://tectonic-typesetting.github.io/"><img src="https://img.shields.io/badge/Typesetting-Tectonic%20LaTeX-336699?style=flat-square&logo=latex&logoColor=white" alt="Tectonic LaTeX" /></a>
-    <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/Tests-187%20passed-success?style=flat-square&logo=pytest&logoColor=white" alt="187 Tests Passed" /></a>
+    <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/Tests-194%20passed-success?style=flat-square&logo=pytest&logoColor=white" alt="194 Tests Passed" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License" /></a>
   </p>
 
   <p align="center">
     <a href="#-key-features">Key Features</a> •
     <a href="#-screenshots">Screenshots</a> •
-    <a href="#-local-dependencies--software-stack">Dependencies</a> •
+    <a href="#-software-stack--dependencies">Stack</a> •
     <a href="#-system-architecture">Architecture</a> •
     <a href="#-installation--local-setup">Installation</a> •
     <a href="#-usage-workflow">Usage</a> •
     <a href="#-configuration">Configuration</a> •
-    <a href="#-local-first--privacy">Privacy</a>
+    <a href="#-privacy--security">Privacy & Security</a>
   </p>
 
 </div>
@@ -36,19 +37,24 @@
 
 Traditional resume management is fragmented: maintaining dozens of slightly divergent Word docs or PDFs easily leads to outdated credentials, formatting inconsistencies, and broken layouts.
 
-BuildR solves this with a **single source of truth designed to run 100% locally on your computer**:
+BuildR solves this with a **single source of truth and intelligent tailoring pipeline**:
 1. You maintain **one comprehensive Master Profile** with all your career history, projects, skills, education, and credentials.
 2. For every target position, BuildR analyzes the job posting and uses **Google Gemini** to intelligently rephrase bullet points, highlight relevant accomplishments, and surface missing keywords.
-3. Your final tailored resume is compiled on your machine using **Tectonic LaTeX** into an elegant, ATS-friendly, publication-grade PDF.
-
-> **Zero Cloud Deployment Required**: BuildR is a local-first application. There is no remote database, no cloud user accounts, and no hosting required. All your profile information, drafts, session history, and generated PDFs stay private and stored locally on your own machine.
+3. Your final tailored resume is compiled locally using **Tectonic LaTeX** into an elegant, ATS-friendly, publication-grade PDF.
+4. **Google Authentication & Cloud Firestore Persistence**: Sign in securely with Google. Your profile data values and AI resume variations are stored in Google Cloud Firestore while PDFs remain strictly preserved on your local machine.
 
 > **Zero-Hallucination Guarantee**: BuildR enforces a strict **anti-fabrication pipeline**. The AI is physically restricted from inventing companies, skills, or metrics that do not exist in your master profile.
+
+> **Resilient Hybrid Storage**: Even with cloud Firestore persistence enabled, BuildR maintains a local filesystem cache (`storage/users/<uid>/`). If your network is offline or cloud credentials are not yet configured, the app falls back seamlessly without crashing.
 
 ---
 
 ## ✨ Key Features
 
+- **🔐 Secure Google Authentication**
+  Single Sign-On using Firebase Google Auth with protected routes and automatic user session isolation.
+- **☁️ Cloud Firestore Database Persistence**
+  Saves user details (Master Resume data) and AI variations (tailored resumes, LaTeX text, and metadata) directly to Firestore under user-scoped collections (`users/{user_id}`). *PDFs are never stored in the database.*
 - **🎯 Single Master Profile**
   Manage all personal details, work experiences, education, open-source projects, technical skills, certifications, and awards in one structured database.
 - **⚡ AI-Powered Tailoring Workspace**
@@ -64,7 +70,7 @@ BuildR solves this with a **single source of truth designed to run 100% locally 
 - **🖋️ Publication-Grade LaTeX Typesetting**
   Compiled locally via the **Tectonic** modern LaTeX engine. Delivers crisp typography, accurate margins, and optimal readability for both human recruiters and Automated Tracking Systems (ATS).
 - **📚 Versioned Resume Library**
-  Every generated resume is preserved locally in your library with both its final PDF and reproducible `.tex` source code. Download, rename, duplicate, or delete anytime.
+  Every generated resume is preserved with both its final PDF and reproducible `.tex` source code. Download, rename, duplicate, or delete anytime.
 - **📥 PDF & DOCX Resume Importer**
   Already have an existing resume? Upload your PDF or DOCX file to automatically parse and populate your Master Profile using multimodal text extractors.
 
@@ -97,74 +103,70 @@ BuildR solves this with a **single source of truth designed to run 100% locally 
 
 ---
 
-## 📦 Local Dependencies & Software Stack
+## 📦 Software Stack & Dependencies
 
-BuildR runs entirely on your local machine. Below is the complete catalog of all system utilities, binaries, and Python packages that run locally on your PC.
+### 1. System Prerequisites
 
-### 1. System-Level Prerequisites
-
-| Tool | Recommended Version | What It Does on Your PC |
+| Tool | Recommended Version | What It Does |
 |---|:---:|---|
-| **Python** | `3.10+` | Runs the Flask backend, Pydantic data validation, AI service layer, and local tests. |
-| **Tectonic CLI** | `v0.15.0+` | A fast, self-contained modern XeTeX LaTeX engine that compiles `.tex` templates into PDFs on your PC. It downloads necessary packages automatically into a local cache directory (`.tectonic/`) on first run—meaning you **do not** need to install a heavy 5GB+ TeX Live or MiKTeX distribution. |
-| **Git** | `Any modern version` | Used to clone the repository to your local drive. |
+| **Python** | `3.10+` | Runs the Flask backend, Pydantic data validation, AI service layer, and tests. |
+| **Tectonic CLI** | `v0.15.0+` | A fast, self-contained modern XeTeX LaTeX engine that compiles `.tex` templates into PDFs locally. Downloads necessary packages into a local cache directory (`.tectonic/`) on first run. |
+| **Git** | Modern version | Used to clone and manage the codebase. |
 | **Modern Browser** | Chrome / Firefox / Edge / Brave / Safari | Renders the single-page application interface and displays real-time PDF previews. |
 
 ### 2. Python Packages (`requirements.txt`)
 
-When you run `pip install -r requirements.txt`, the following packages are installed into your Python environment:
-
-| Package | Version Constraint | Role & Execution on Your PC |
+| Package | Version Constraint | Role & Execution |
 |---|:---:|---|
-| **`flask`** | `>=3.1, <4` | Core web framework. Powers the local HTTP server (`127.0.0.1:5000`), routing, REST endpoints, and file serving. |
-| **`pydantic`** | `>=2.13, <3` | Strict data validation and schema definitions for your Master Profile, Tailored Profiles, and AI output validation. |
-| **`openai`** | `>=1.50, <3` | Official SDK client used to communicate with Google Gemini's OpenAI-compatible API endpoint (`gemini-3.8-flash`). |
-| **`jinja2`** | `>=3.1, <4` | Template engine with customized delimiter syntax used to dynamically assemble clean LaTeX (`.tex`) resume source files. |
-| **`pypdf`** | `>=6.14, <7` | Local text and layout extractor that parses existing `.pdf` resumes uploaded by the user to populate the Master Profile. |
-| **`python-docx`** | `>=1.2, <2` | Extracts headings, paragraphs, and lists from user-uploaded Microsoft Word (`.docx`) resumes for parsing. |
-| **`beautifulsoup4`** | `>=4.15, <5` | Local HTML scraper and DOM cleaner that extracts structured job descriptions when you paste a public job posting URL. |
-| **`requests`** | `>=2.34, <3` | HTTP client used locally to fetch web pages for job-posting scraping. |
-| **`psutil`** | `>=5.9, <7` | Measures process memory usage (RSS) during file parsing to ensure efficient local memory footprint. |
-| **`python-dotenv`** | `>=1.2, <2` | Automatically loads your local `.env` configuration file into Python's environment variables. |
+| **`flask`** | `>=3.1, <4` | Core web framework powering routes, REST endpoints, session cookies, and file serving. |
+| **`pydantic`** | `>=2.13, <3` | Strict data validation and schema definitions for profiles, tailoring results, and drafts. |
+| **`openai`** | `>=1.50, <3` | Official SDK client used to communicate with Google Gemini's OpenAI-compatible endpoint. |
+| **`firebase-admin`** | `>=6.5, <7` | Firebase Admin SDK for server-side token verification and Firestore cloud operations. |
+| **`jinja2`** | `>=3.1, <4` | Template engine used to assemble clean LaTeX (`.tex`) resume source files. |
+| **`pypdf`** | `>=6.14, <7` | Local text and layout extractor that parses user-uploaded `.pdf` resumes. |
+| **`python-docx`** | `>=1.2, <2` | Extracts headings, paragraphs, and lists from user-uploaded `.docx` resumes. |
+| **`beautifulsoup4`** | `>=4.15, <5` | HTML scraper that extracts structured job descriptions from job URLs. |
+| **`requests`** | `>=2.34, <3` | HTTP client for external requests and Firestore REST API fallback. |
+| **`psutil`** | `>=5.9, <7` | Process memory monitoring during text extraction to bound RAM usage. |
+| **`python-dotenv`** | `>=1.2, <2` | Loads `.env` configuration file into environment variables at application startup. |
 
-### 3. Development & Testing Packages (`requirements-dev.txt`)
+### 3. Local Storage Layout
 
-| Package | Version Constraint | Role & Execution on Your PC |
-|---|:---:|---|
-| **`pytest`** | `>=9.1, <10` | Test framework that executes the 187 automated tests locally (testing routes, sanitizers, LaTeX escaping, session management, and parsers). |
+User files are scoped strictly per authenticated user inside `storage/users/<user_id>/`:
 
-### 4. Local Storage & File Footprint
-
-All user data is saved directly on your local hard drive inside the `storage/` directory (which is strictly `.gitignore`d):
-
-- `storage/profile.json`: Your master career profile saved in clean, human-readable JSON format.
-- `storage/resumes/<timestamp>_<title>/`: Local folder containing each generated `.pdf`, `.tex` source, and `metadata.json`.
-- `storage/sessions/<session_id>/`: Scratch workspace containing draft iterations, chat logs, and snapshots.
-- `.tectonic/`: Local cache directory where Tectonic caches downloaded LaTeX packages for fast offline recompilation.
+```text
+storage/
+└── users/
+    └── <firebase_uid>/
+        ├── profile.json       # Master profile local cache
+        ├── resumes/           # Saved resumes (each with resume.pdf, resume.tex, metadata.json)
+        └── sessions/          # Tailoring scratchpads, drafts, and snapshot checkpoints
+```
 
 ---
 
 ## 🏗️ System Architecture
-
-BuildR adheres to a strict design principle: **"AI Decides Content, Code Renders Documents"**. The LLM never outputs raw LaTeX code, eliminating compilation crashes, escaping errors, and template injection vulnerabilities.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Single-Page App (SPA)                    │
 │   Vanilla JS • CSS Design System • TipTap Rich Text • PDF   │
 └──────────────────────────────┬──────────────────────────────┘
-                               │ Local REST API (127.0.0.1:5000)
+                               │ REST API (127.0.0.1:5000)
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                       Flask App (app.py)                    │
+│               Flask Application (app.py)                    │
+│    • Auth guard (@require_auth)  • Session Management       │
 └──────┬───────────────────────┬──────────────────────────────┘
        │                       │
        ▼                       ▼
 ┌──────────────┐        ┌─────────────────────────────────────┐
-│ Local Disk   │        │          Services Pipeline          │
-│ profile.json │        │  • ai_service (Gemini + Sanitizer)  │
-│ sessions/    │        │  • latex_service (Jinja2 + Escape)  │
-│ resumes/     │        │  • pdf_service (Tectonic Subprocess)│
+       │                │          Services Pipeline          │
+┌──────┴───────┐        │  • ai_service (Gemini 2.5 Flash)    │
+│ Hybrid Cache │        │  • firestore_service (DB sync)      │
+│ Local Disk   │        │  • firebase_service (Auth & Tokens) │
+│ (storage/    │        │  • latex_service (Jinja2 + Escape)  │
+│  users/<id>) │        │  • pdf_service (Tectonic Subprocess)│
 └──────────────┘        │  • scraper_service (BeautifulSoup)  │
                         │  • parser_service (pypdf/docx)      │
                         │  • master_optimizer (1-page engine) │
@@ -172,8 +174,10 @@ BuildR adheres to a strict design principle: **"AI Decides Content, Code Renders
                                            │
                                            ▼
                         ┌─────────────────────────────────────┐
-                        │        External / System Tools      │
-                        │  • Google Gemini API (AI Reasoning) │
+                        │      Cloud & External Services      │
+                        │  • Google Gemini API (Reasoning)    │
+                        │  • Google Cloud Firestore (Database)│
+                        │  • Firebase Auth (Google Sign-In)   │
                         │  • Tectonic Compiler (Local Binary) │
                         └─────────────────────────────────────┘
 ```
@@ -184,36 +188,23 @@ BuildR adheres to a strict design principle: **"AI Decides Content, Code Renders
 
 ### Step 1: Install Tectonic LaTeX Compiler
 
-Tectonic is a single standalone executable. Choose your operating system below:
-
 - **Windows**:
   ```powershell
-  # Using WinGet (Recommended)
   winget install --id Anoma.Tectonic
-
-  # Or using Chocolatey
-  choco install tectonic
-
-  # Or using Scoop
-  scoop install tectonic
+  # or: choco install tectonic
+  # or: scoop install tectonic
   ```
-
 - **macOS**:
   ```bash
-  # Using Homebrew
   brew install tectonic
   ```
-
 - **Linux** (Debian / Ubuntu / Fedora / Arch):
   ```bash
-  # Arch Linux
-  sudo pacman -S tectonic
-
-  # Or download pre-compiled binary directly:
-  # https://github.com/tectonic-typesetting/tectonic/releases
+  sudo pacman -S tectonic   # Arch
+  # or download binary from https://github.com/tectonic-typesetting/tectonic/releases
   ```
 
-*To verify Tectonic is available on your PATH:*
+*Verify Tectonic is available on your PATH:*
 ```bash
 tectonic --version
 ```
@@ -229,15 +220,15 @@ cd BuildR
 
 ---
 
-### Step 3: Create & Activate a Virtual Environment
+### Step 3: Create & Activate Virtual Environment
 
-**On Windows (PowerShell):**
+**Windows (PowerShell):**
 ```powershell
 python -m venv env
 .\env\Scripts\Activate.ps1
 ```
 
-**On macOS / Linux:**
+**macOS / Linux:**
 ```bash
 python3 -m venv env
 source env/bin/activate
@@ -247,15 +238,13 @@ source env/bin/activate
 
 ### Step 4: Install Python Dependencies
 
-Install all core application packages and development test tools:
-
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ---
 
-### Step 5: Configure Your Local `.env`
+### Step 5: Configure `.env`
 
 Copy the sample environment file:
 
@@ -263,30 +252,42 @@ Copy the sample environment file:
 cp .env.example .env
 ```
 
-Open `.env` in any text editor and add your Google Gemini API key:
+Open `.env` and fill in your Gemini API key and Firebase Web App credentials:
 
 ```env
-# Required: Get your free API key at https://aistudio.google.com/
+# Google Gemini API key (https://aistudio.google.com/)
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
 
-# Optional defaults
-GEMINI_MODEL=gemini-3.8-flash
+# Firebase Configuration (Firebase Console -> Project settings -> General -> Your apps)
+FIREBASE_API_KEY=your_firebase_api_key
+FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_STORAGE_BUCKET=your_project_id.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_APP_ID=your_app_id
+FIREBASE_MEASUREMENT_ID=G-XXXXXXXXXX
+
+# Optional: Server Service Account (bypasses Firestore client rules)
+# GOOGLE_APPLICATION_CREDENTIALS=serviceAccountKey.json
+
 PORT=5000
 FLASK_DEBUG=1
 ```
 
 ---
 
-### Step 6: Start the Local Server
+### Step 6: Start the Server
 
 ```bash
 python app.py
 ```
 
-Open your browser and navigate to:
+Navigate to:
 ```
 http://127.0.0.1:5000/
 ```
+Sign in with your Google account to access your Master Profile and resume generator.
 
 ---
 
@@ -294,70 +295,82 @@ http://127.0.0.1:5000/
 
 ```mermaid
 graph LR
-    A[1. Master Profile] --> B[2. Input Job Posting]
-    B --> C[3. AI Tailoring & Analysis]
-    C --> D[4. Chat Refinement & Snapshots]
-    D --> E[5. Compile & Export PDF]
+    A[1. Sign In via Google] --> B[2. Build Master Profile]
+    B --> C[3. Input Job Description]
+    C --> D[4. AI Tailoring & Analysis]
+    D --> E[5. Chat Refinement & Snapshots]
+    E --> F[6. Compile & Export PDF]
 ```
 
-1. **Build Your Master Profile**:
+1. **Sign in with Google**:
+   - Access is authenticated and scoped to your unique Google account.
+2. **Build Your Master Profile**:
    - Fill in your work experience, education, projects, skills, and certifications in the profile editor.
-   - Or upload an existing resume (`.pdf` or `.docx`) to automatically seed your profile via AI parsing.
-2. **Analyze a Job Opportunity**:
-   - Paste the target job description or paste the URL of a public job posting.
-   - Click **Analyze Job** to view extracted requirements and keyword matches.
-3. **Generate Tailored Resume**:
+   - Or upload an existing resume (`.pdf` or `.docx`) to seed your profile automatically via parser.
+3. **Analyze a Target Job**:
+   - Paste the job description or provide the URL of a public job posting.
+   - Click **Analyze Job** to view matched keywords and extracted requirements.
+4. **Generate Tailored Resume**:
    - Click **Generate Tailored Resume**.
-   - BuildR aligns your experience bullets, highlights matching skills, and preserves truthfulness.
-4. **Iterate with AI Chat**:
-   - Use the live chat assistant to request adjustments (e.g., *"Make project bullets more metrics-focused"*, *"Highlight Python and AWS experience"*).
+   - BuildR rephrases experience bullets, highlights matching skills, and preserves strict truthfulness.
+5. **Iterate with AI Chat**:
+   - Use the live chat assistant to request adjustments (e.g., *"Make project bullets more metrics-focused"*).
    - Save named snapshots to compare versions.
-5. **Download & Archive**:
+6. **Download & Archive**:
    - Preview the compiled PDF directly in your browser.
-   - Download the production PDF or export the raw `.tex` source code.
-   - Access all past tailored resumes anytime in the **Resume Library**.
+   - Download the final PDF or export raw `.tex` source code.
+   - Access all past resumes anytime in the **Resume Library**.
 
 ---
 
-## ⚙️ Configuration
-
-BuildR supports configuration via your local `.env` file:
+## ⚙️ Configuration Reference
 
 | Variable | Required | Default Value | Description |
 |---|:---:|---|---|
-| `GEMINI_API_KEY` | **Yes** | — | Google Gemini API key (fallback: `GOOGLE_API_KEY`) |
-| `GEMINI_BASE_URL` | No | `https://generativelanguage.googleapis.com/v1beta/openai/` | Google OpenAI-compatible endpoint |
-| `GEMINI_MODEL` | No | `gemini-3.8-flash` | Gemini model name |
-| `GEMINI_TIMEOUT_MS` | No | `90000` | Gemini HTTP request timeout in milliseconds |
+| `GEMINI_API_KEY` | **Yes** | — | Google Gemini API key (from AI Studio) |
+| `GEMINI_BASE_URL` | No | `https://generativelanguage.googleapis.com/v1beta/openai/` | OpenAI-compatible Gemini gateway |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
+| `GEMINI_TIMEOUT_MS` | No | `90000` | Gemini HTTP timeout in milliseconds |
+| `FIREBASE_API_KEY` | **Yes** | — | Firebase Web API key |
+| `FIREBASE_AUTH_DOMAIN` | **Yes** | — | Firebase authentication domain |
+| `FIREBASE_PROJECT_ID` | **Yes** | — | Firebase/GCP Project ID |
+| `FIREBASE_STORAGE_BUCKET` | No | — | Firebase Storage bucket identifier |
+| `FIREBASE_MESSAGING_SENDER_ID`| No | — | Firebase Messaging Sender ID |
+| `FIREBASE_APP_ID` | **Yes** | — | Firebase App ID |
+| `FIREBASE_MEASUREMENT_ID` | No | — | Google Analytics Measurement ID |
+| `GOOGLE_APPLICATION_CREDENTIALS` | No | — | Optional path to service account key JSON |
+| `SECRET_KEY` | No | `dev-fallback-key` | Secret key used to cryptographically sign Flask session cookies |
 | `FLASK_DEBUG` | No | `0` | Enable dev server auto-reloading (`1` for development) |
-| `PORT` | No | `5000` | Local port for the web server |
+| `PORT` | No | `5000` | Port for the local web server |
 
 ---
 
 ## 🧪 Running Tests Locally
 
-BuildR includes an extensive automated test suite covering all routes, LaTeX rendering, anti-fabrication sanitizers, document extractors, and session storage:
+BuildR includes an automated test suite (194 tests) covering routes, LaTeX rendering, anti-fabrication sanitizers, document extractors, session storage, and Firestore persistence:
 
 ```bash
-# Run the full test suite (187 tests)
+# Run the full test suite
 pytest
 
 # Run with verbose output
 pytest -v
 
-# Run anti-hallucination sanitizer tests specifically
+# Run Firestore persistence tests
+pytest tests/test_firestore_service.py -v
+
+# Run anti-hallucination sanitizer tests
 pytest tests/test_ai_sanitize.py -v
 ```
 
-> **Note**: Tests that compile LaTeX via Tectonic will automatically skip gracefully if the `tectonic` binary is not found on your system PATH. AI unit tests validate sanitizers and schemas locally without making live billable API requests.
-
 ---
 
-## 🔒 Local-First & Privacy
+## 🔒 Privacy & Security
 
-- **No Cloud Database**: Everything you create is stored on your local drive in `storage/`. No third-party servers store your resumes or career credentials.
-- **Data Minimization**: The only outbound network traffic occurs when sending the job description and resume bullets to Google Gemini for tailoring.
-- **Easy Backups & Version Control**: Because profiles and resumes are stored as plain JSON and LaTeX files, you can back them up, copy them, or sync them with your personal backup systems.
+- **Strict User Scoping**: All user data, drafts, and resume archives are scoped to the authenticated user's ID (`storage/users/<uid>/` and `users/{user_id}`).
+- **No Remote PDFs**: PDFs are compiled locally using Tectonic and never sent to or stored in Firestore.
+- **Anti-Fabrication Guarantee**: AI suggestions are cross-checked against your master profile to block hallucinated accomplishments.
+- **Resilient Fallback**: If Firestore is unreachable, the system falls back to the local encrypted cache transparently.
 
 ---
 
@@ -365,10 +378,10 @@ pytest tests/test_ai_sanitize.py -v
 
 ```text
 BuildR/
-├── app.py                      # Flask REST router and server entrypoint
+├── app.py                      # Flask REST router, auth guard & server entrypoint
 ├── requirements.txt            # Production Python dependencies
 ├── requirements-dev.txt        # Development dependencies (pytest)
-├── .env.example                # Sample environment configuration file
+├── .env.example                # Sample environment configuration template
 │
 ├── assets/                     # Screenshots and brand assets for documentation
 │   ├── logo.png                # BuildR brand logo
@@ -383,26 +396,32 @@ BuildR/
 │
 ├── services/                   # Modular service layer
 │   ├── ai_service.py           # Gemini client, structured prompts & sanitizer
+│   ├── auth_service.py         # Session management, user roots & route decorators
+│   ├── firebase_service.py     # Firebase Admin SDK & token verifier
+│   ├── firestore_service.py    # Cloud Firestore persistence (profiles & variations)
 │   ├── latex_service.py        # Jinja2 LaTeX template renderer & Unicode escaper
 │   ├── pdf_service.py          # Tectonic compiler wrapper & page counter
 │   ├── parser_service.py       # PDF / DOCX resume extractor
 │   ├── scraper_service.py      # Job posting web scraper
 │   ├── master_optimizer.py     # One-page layout optimization intelligence
-│   ├── storage_service.py      # Master profile persistence
+│   ├── storage_service.py      # Master profile persistence (Firestore + local cache)
 │   ├── resume_library.py       # Generated resume catalog and version management
 │   └── session_service.py      # Workspace scratchpad session manager
 │
 ├── templates/                  # Frontend HTML
-│   └── index.html              # Single-page application shell
+│   ├── index.html              # Single-page application shell
+│   └── login.html              # Google sign-in authentication page
 ├── static/                     # Frontend JS & CSS
 │   ├── app.js                  # SPA controller, TipTap editor & PDF viewer
 │   └── style.css               # Design system & dark/light theme styles
 ├── templates_latex/            # LaTeX Jinja2 templates
 │   └── resume.tex              # Clean ATS resume template
 │
-└── tests/                      # Pytest automated test suite (187 tests)
+└── tests/                      # Automated test suite (194 tests)
+    ├── conftest.py             # Shared pytest fixtures & test client setup
     ├── test_ai_sanitize.py     # Anti-fabrication fuzzing & validation tests
     ├── test_app_routes.py      # Flask API endpoint integration tests
+    ├── test_firestore_service.py # Firestore persistence & schema tests
     ├── test_latex_service.py   # LaTeX escaping and formatting tests
     ├── test_master_optimizer.py# One-page layout optimizer tests
     ├── test_parser_service.py  # Resume text extraction tests
